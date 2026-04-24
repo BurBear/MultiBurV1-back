@@ -1,0 +1,43 @@
+# ==============================
+# Entorno Virtual
+# ==============================
+venv/
+env/
+.venv/
+.env_folder/
+
+# ==============================
+# Archivos Compilados de Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==============================
+# Archivos Sensibles y Variables de Entorno
+# ==============================
+.env
+.env.*
+*.pem
+secrets/
+.keys/
+
+# ==============================
+# Bases de Datos y Almacenamiento Local
+# ==============================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==============================
+# Logs e Información de Debug
+# ==============================
+*.log
+
+# ==============================
+# Herramientas de Desarrollo / IDEs
+# ==============================
+.vscode/
+.idea/
+.spyderproject
