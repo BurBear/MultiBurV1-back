@@ -21,7 +21,8 @@ class OrdenProcesoBase(BaseModel):
     tipo_proceso: str
 
 class OrdenProcesoCreate(OrdenProcesoBase):
-    orden_id: int
+    orden_id: int | None = None
+    orden_produccion_id: int | None = None
 
 class OrdenProcesoUpdate(BaseModel):
     estado: str | None = None
@@ -31,7 +32,8 @@ class OrdenProcesoUpdate(BaseModel):
 
 class OrdenProceso(OrdenProcesoBase):
     id: int
-    orden_id: int
+    orden_id: int | None = None
+    orden_produccion_id: int | None = None
     estado: str
     operador_id: int | None = None
     fecha_inicio: datetime | None = None

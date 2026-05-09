@@ -1,0 +1,30 @@
+from sqlalchemy.orm import Session
+from app.models.orden_trabajo import OrdenTrabajo
+from app.schemas.orden_trabajo import OrdenTrabajoCreate, OrdenTrabajoUpdate
+from app.services.base import CRUDBase
+
+
+class CRUDOrdenTrabajo(CRUDBase[OrdenTrabajo, OrdenTrabajoCreate, OrdenTrabajoUpdate]):
+    def create(self, db: Session, *, obj_in: OrdenTrabajoCreate, user_id: int) -> OrdenTrabajo:
+        db_obj = OrdenTrabajo(
+            cliente_id=obj_in.cliente_id,
+            codigo=obj_in.codigo,
+            nombre=obj_in.nombre,
+            descripcion=obj_in.descripcion,
+            tiene_orden_compra=obj_in.tiene_orden_compra,
+            numero_orden_compra=obj_in.numero_orden_compra,
+            fecha_orden_compra=obj_in.fecha_orden_compra,
+            fecha_entrega_estimada=obj_in.fecha_entrega_estimada,
+            estado="PENDIENTE",
+            user_id=user_id,
+        )
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get_all(self, db: Session) -> list[OrdenTrabajo]:
+        return db.query(OrdenTrabajo).all()
+
+
+orden_trabajo = CRUDOrdenTrabajo(OrdenTrabajo)
