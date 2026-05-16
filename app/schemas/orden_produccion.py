@@ -1,10 +1,41 @@
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from .orden_proceso import OrdenProceso
 
 
-class OrdenProduccionBase(BaseModel):
+MODO_COLOR_VALIDOS = {"F/C", "1 COLOR", "PERSONALIZADO"}
+TIPO_IMPRESION_VALIDOS = {"TIRA", "T/R", "T+R", "DOBLE PINZA"}
+
+
+class OrdenProduccionFichaTecnicaBase(BaseModel):
+    demasia: int | None = None
+    modo_color: str | None = None
+    tipo_impresion: str | None = None
+
+    @field_validator("demasia")
+    @classmethod
+    def validate_demasia(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("demasia no puede ser negativa")
+        return value
+
+    @field_validator("modo_color")
+    @classmethod
+    def validate_modo_color(cls, value: str | None) -> str | None:
+        if value is not None and value not in MODO_COLOR_VALIDOS:
+            raise ValueError("modo_color debe ser F/C, 1 COLOR o PERSONALIZADO")
+        return value
+
+    @field_validator("tipo_impresion")
+    @classmethod
+    def validate_tipo_impresion(cls, value: str | None) -> str | None:
+        if value is not None and value not in TIPO_IMPRESION_VALIDOS:
+            raise ValueError("tipo_impresion debe ser TIRA, T/R, T+R o DOBLE PINZA")
+        return value
+
+
+class OrdenProduccionBase(OrdenProduccionFichaTecnicaBase):
     orden_trabajo_id: int | None = None
     cliente_id: int
     codigo: str
@@ -33,7 +64,7 @@ class OrdenProduccionCreate(OrdenProduccionBase):
         return self
 
 
-class OrdenProduccionCreateFromTrabajo(BaseModel):
+class OrdenProduccionCreateFromTrabajo(OrdenProduccionFichaTecnicaBase):
     codigo: str
     descripcion: str
     cantidad: int
@@ -53,7 +84,7 @@ class OrdenProduccionCreateFromTrabajo(BaseModel):
         return self
 
 
-class OrdenProduccionUpdate(BaseModel):
+class OrdenProduccionUpdate(OrdenProduccionFichaTecnicaBase):
     codigo: str | None = None
     descripcion: str | None = None
     cantidad: int | None = None
@@ -70,6 +101,9 @@ class OrdenProduccion(BaseModel):
     codigo: str
     descripcion: str
     cantidad: int
+    demasia: int | None = None
+    modo_color: str | None = None
+    tipo_impresion: str | None = None
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None

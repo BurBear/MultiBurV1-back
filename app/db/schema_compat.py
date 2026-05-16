@@ -73,3 +73,26 @@ def ensure_sqlite_orden_proceso_compat(engine: Engine) -> None:
             text("CREATE INDEX ix_ordenes_procesos_orden_produccion_id ON ordenes_procesos (orden_produccion_id)")
         )
         connection.execute(text("PRAGMA foreign_keys=ON"))
+
+
+def ensure_sqlite_orden_produccion_technical_fields(engine: Engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(engine)
+    if "ordenes_produccion" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("ordenes_produccion")}
+    fields = {
+        "demasia": "INTEGER",
+        "modo_color": "VARCHAR",
+        "tipo_impresion": "VARCHAR",
+    }
+
+    with engine.begin() as connection:
+        for field_name, field_type in fields.items():
+            if field_name not in columns:
+                connection.execute(
+                    text(f"ALTER TABLE ordenes_produccion ADD COLUMN {field_name} {field_type}")
+                )
