@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from app.services.base import CRUDBase
 from app.models.orden import Orden
-from app.models.orden_proceso import OrdenProceso, SECUENCIA_PROCESOS
+from app.models.orden_proceso import OrdenProceso, SECUENCIA_PROCESOS, resolve_process_area
 from app.schemas.orden import OrdenCreate, OrdenUpdate
 
 class CRUDOrden(CRUDBase[Orden, OrdenCreate, OrdenUpdate]):
@@ -33,6 +33,7 @@ class CRUDOrden(CRUDBase[Orden, OrdenCreate, OrdenUpdate]):
             nuevo_proceso = OrdenProceso(
                 orden_id=db_obj.id,
                 tipo_proceso=proceso_nombre,
+                area=resolve_process_area(proceso_nombre),
                 estado="PENDIENTE"
             )
             db.add(nuevo_proceso)

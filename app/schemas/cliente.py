@@ -8,6 +8,7 @@ class ClienteBase(BaseModel):
     telefono: str | None = None
     correo: str | None = None
     direccion: str | None = None
+    requiere_orden_compra: bool = False
 
 
 class ClienteCreate(ClienteBase):
@@ -20,6 +21,7 @@ class ClienteUpdate(BaseModel):
     telefono: str | None = None
     correo: str | None = None
     direccion: str | None = None
+    requiere_orden_compra: bool | None = None
     estado: str | None = None
 
 

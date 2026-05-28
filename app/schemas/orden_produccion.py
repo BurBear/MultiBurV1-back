@@ -38,15 +38,17 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
 class OrdenProduccionBase(OrdenProduccionFichaTecnicaBase):
     orden_trabajo_id: int | None = None
     cliente_id: int
-    codigo: str
+    codigo: str | None = None
     descripcion: str
     cantidad: int
+    fecha_entrega_estimada: datetime
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
     tipo_origen: Literal["COMPLETO", "SERVICIO"]
     tipo_servicio: Literal["COMPLETO", "SOLO_IMPRESION", "PERSONALIZADO"]
     procesos_personalizados: list[str] | None = None
+    ruta_acabados: list[str] | None = None
 
 
 class OrdenProduccionCreate(OrdenProduccionBase):
@@ -61,18 +63,22 @@ class OrdenProduccionCreate(OrdenProduccionBase):
                 raise ValueError("Se debe proveer procesos_personalizados si el servicio es PERSONALIZADO")
             if len(self.procesos_personalizados) != len(set(self.procesos_personalizados)):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
+        if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
+            raise ValueError("La ruta de acabados no puede contener elementos duplicados")
         return self
 
 
 class OrdenProduccionCreateFromTrabajo(OrdenProduccionFichaTecnicaBase):
-    codigo: str
+    codigo: str | None = None
     descripcion: str
     cantidad: int
+    fecha_entrega_estimada: datetime
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
     tipo_servicio: Literal["COMPLETO", "SOLO_IMPRESION", "PERSONALIZADO"]
     procesos_personalizados: list[str] | None = None
+    ruta_acabados: list[str] | None = None
 
     @model_validator(mode="after")
     def validate_procesos(self):
@@ -81,6 +87,8 @@ class OrdenProduccionCreateFromTrabajo(OrdenProduccionFichaTecnicaBase):
                 raise ValueError("Se debe proveer procesos_personalizados si el servicio es PERSONALIZADO")
             if len(self.procesos_personalizados) != len(set(self.procesos_personalizados)):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
+        if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
+            raise ValueError("La ruta de acabados no puede contener elementos duplicados")
         return self
 
 
@@ -88,6 +96,7 @@ class OrdenProduccionUpdate(OrdenProduccionFichaTecnicaBase):
     codigo: str | None = None
     descripcion: str | None = None
     cantidad: int | None = None
+    fecha_entrega_estimada: datetime | None = None
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
@@ -101,6 +110,7 @@ class OrdenProduccion(BaseModel):
     codigo: str
     descripcion: str
     cantidad: int
+    fecha_entrega_estimada: datetime | None = None
     demasia: int | None = None
     modo_color: str | None = None
     tipo_impresion: str | None = None

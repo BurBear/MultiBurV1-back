@@ -13,6 +13,7 @@ class OrdenProduccion(Base):
     codigo = Column(String, nullable=False, unique=True, index=True)
     descripcion = Column(String, nullable=False)
     cantidad = Column(Integer, nullable=False, default=1)
+    fecha_entrega_estimada = Column(DateTime, nullable=True)
     demasia = Column(Integer, nullable=True)
     modo_color = Column(String, nullable=True)
     tipo_impresion = Column(String, nullable=True)

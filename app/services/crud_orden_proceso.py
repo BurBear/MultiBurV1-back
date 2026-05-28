@@ -1,4 +1,4 @@
-from sqlalchemy import update
+from sqlalchemy import select, update
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.services.base import CRUDBase
@@ -14,13 +14,45 @@ class CRUDOrdenProceso(CRUDBase[OrdenProceso, OrdenProcesoCreate, OrdenProcesoUp
             OrdenProceso.tipo_proceso == tipo_proceso
         ).first()
 
+    def get_by_orden_produccion_and_tipo(self, db: Session, orden_produccion_id: int, tipo_proceso: str) -> OrdenProceso | None:
+        return db.query(OrdenProceso).filter(
+            OrdenProceso.orden_produccion_id == orden_produccion_id,
+            OrdenProceso.tipo_proceso == tipo_proceso
+        ).first()
+
     def get_all_by_orden(self, db: Session, orden_id: int) -> list[OrdenProceso]:
-        return db.query(OrdenProceso).filter(OrdenProceso.orden_id == orden_id).all()
+        return db.query(OrdenProceso).filter(OrdenProceso.orden_id == orden_id).order_by(OrdenProceso.id).all()
+
+    def get_all_by_orden_produccion(self, db: Session, orden_produccion_id: int) -> list[OrdenProceso]:
+        return db.query(OrdenProceso).filter(
+            OrdenProceso.orden_produccion_id == orden_produccion_id
+        ).order_by(OrdenProceso.id).all()
+
+    def get_active_by_operador(
+        self,
+        db: Session,
+        *,
+        operador_id: int,
+        exclude_proceso_id: int | None = None,
+    ) -> OrdenProceso | None:
+        query = db.query(OrdenProceso).filter(
+            OrdenProceso.operador_id == operador_id,
+            OrdenProceso.estado.in_(["EN_PROCESO", "PAUSADO"]),
+        )
+        if exclude_proceso_id is not None:
+            query = query.filter(OrdenProceso.id != exclude_proceso_id)
+        return query.order_by(OrdenProceso.fecha_inicio.desc(), OrdenProceso.id.desc()).first()
 
     def iniciar_proceso_atomico(self, db: Session, proceso_id: int, operador_id: int) -> bool:
+        active_process_exists = select(OrdenProceso.id).where(
+            OrdenProceso.operador_id == operador_id,
+            OrdenProceso.estado.in_(["EN_PROCESO", "PAUSADO"]),
+            OrdenProceso.id != proceso_id,
+        ).exists()
         stmt = update(OrdenProceso).where(
             OrdenProceso.id == proceso_id,
-            OrdenProceso.estado == "PENDIENTE"
+            OrdenProceso.estado == "PENDIENTE",
+            ~active_process_exists,
         ).values(
             estado="EN_PROCESO",
             operador_id=operador_id,

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -13,6 +13,7 @@ class Cliente(Base):
     telefono = Column(String, nullable=True)
     correo = Column(String, nullable=True)
     direccion = Column(String, nullable=True)
+    requiere_orden_compra = Column(Boolean, default=False, nullable=False)
     estado = Column(String, default="ACTIVO", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

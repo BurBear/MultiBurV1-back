@@ -9,3 +9,4 @@ from app.models.orden_trabajo import OrdenTrabajo
 from app.models.orden_produccion import OrdenProduccion
 from app.models.orden_proceso import OrdenProceso
 from app.models.orden_proceso_historial import OrdenProcesoHistorial
+from app.models.incidencia import Incidencia, IncidenciaHistorial

@@ -17,6 +17,11 @@ class OrdenTrabajo(Base):
     fecha_orden_compra = Column(Date, nullable=True)
     fecha_entrega_estimada = Column(Date, nullable=True)
     estado = Column(String, default="PENDIENTE", nullable=False)
+    requiere_guia_entrega = Column(Boolean, default=False, nullable=False)
+    numero_guia_entrega = Column(String, nullable=True)
+    observacion_guia_entrega = Column(String, nullable=True)
+    observacion_entrega = Column(String, nullable=True)
+    fecha_entrega_real = Column(DateTime, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

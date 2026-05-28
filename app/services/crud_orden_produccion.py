@@ -1,6 +1,7 @@
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.orden_produccion import OrdenProduccion
-from app.models.orden_proceso import OrdenProceso, SECUENCIA_PROCESOS
+from app.models.orden_proceso import OrdenProceso, SECUENCIA_PROCESOS, resolve_process_area
 from app.schemas.orden_produccion import (
     OrdenProduccionCreate,
     OrdenProduccionCreateFromTrabajo,
@@ -10,18 +11,43 @@ from app.services.base import CRUDBase
 
 
 class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, OrdenProduccionUpdate]):
+    def _next_codigo(self, db: Session) -> str:
+        prefix = "OP-"
+        numeric_codes = []
+        for codigo in db.query(OrdenProduccion.codigo).all():
+            value = str(codigo[0] or "")
+            if value.startswith(prefix):
+                suffix = value[len(prefix):]
+                if suffix.isdigit() and len(suffix) == 4:
+                    numeric_codes.append(int(suffix))
+            elif value.isdigit():
+                numeric_codes.append(int(value))
+        return f"{prefix}{(max(numeric_codes) if numeric_codes else 0) + 1:04d}"
+
     def _procesos_por_tipo_servicio(
         self,
         *,
         tipo_servicio: str,
         procesos_personalizados: list[str] | None,
-    ) -> list[str]:
+        ruta_acabados: list[str] | None,
+    ) -> list[tuple[str, str]]:
+        acabados = [item.strip().upper() for item in (ruta_acabados or []) if item and item.strip()]
+        if not acabados:
+            acabados = ["ACABADOS"]
+
+        def expand(proceso_nombre: str) -> list[tuple[str, str]]:
+            if proceso_nombre == "ACABADOS":
+                return [(acabado, "ACABADOS") for acabado in acabados]
+            return [(proceso_nombre, resolve_process_area(proceso_nombre))]
+
         if tipo_servicio == "COMPLETO":
-            return SECUENCIA_PROCESOS
+            procesos_base = SECUENCIA_PROCESOS
+            return [item for proceso in procesos_base for item in expand(proceso)]
         if tipo_servicio == "SOLO_IMPRESION":
-            return ["IMPRESION", "ACABADOS"]
+            return [item for proceso in ["IMPRESION", "ACABADOS"] for item in expand(proceso)]
         if tipo_servicio == "PERSONALIZADO":
-            return [tipo for tipo in SECUENCIA_PROCESOS if tipo in (procesos_personalizados or [])]
+            procesos_base = [tipo for tipo in SECUENCIA_PROCESOS if tipo in (procesos_personalizados or [])]
+            return [item for proceso in procesos_base for item in expand(proceso)]
         return []
 
     def create(self, db: Session, *, obj_in: OrdenProduccionCreate, user_id: int) -> OrdenProduccion:
@@ -33,6 +59,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             codigo=obj_in.codigo,
             descripcion=obj_in.descripcion,
             cantidad=obj_in.cantidad,
+            fecha_entrega_estimada=obj_in.fecha_entrega_estimada,
             demasia=obj_in.demasia,
             modo_color=obj_in.modo_color,
             tipo_impresion=obj_in.tipo_impresion,
@@ -42,6 +69,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             tipo_origen=obj_in.tipo_origen,
             tipo_servicio=obj_in.tipo_servicio,
             procesos_personalizados=obj_in.procesos_personalizados,
+            ruta_acabados=obj_in.ruta_acabados,
         )
 
     def create_from_trabajo(
@@ -61,6 +89,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             codigo=obj_in.codigo,
             descripcion=obj_in.descripcion,
             cantidad=obj_in.cantidad,
+            fecha_entrega_estimada=obj_in.fecha_entrega_estimada,
             demasia=obj_in.demasia,
             modo_color=obj_in.modo_color,
             tipo_impresion=obj_in.tipo_impresion,
@@ -70,6 +99,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             tipo_origen="COMPLETO",
             tipo_servicio=obj_in.tipo_servicio,
             procesos_personalizados=obj_in.procesos_personalizados,
+            ruta_acabados=obj_in.ruta_acabados,
         )
 
     def _create_with_processes(
@@ -79,9 +109,10 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         user_id: int,
         orden_trabajo_id: int | None,
         cliente_id: int,
-        codigo: str,
+        codigo: str | None,
         descripcion: str,
         cantidad: int,
+        fecha_entrega_estimada: datetime,
         demasia: int | None,
         modo_color: str | None,
         tipo_impresion: str | None,
@@ -91,13 +122,15 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         tipo_origen: str,
         tipo_servicio: str,
         procesos_personalizados: list[str] | None,
+        ruta_acabados: list[str] | None,
     ) -> OrdenProduccion:
         db_obj = OrdenProduccion(
             orden_trabajo_id=orden_trabajo_id,
             cliente_id=cliente_id,
-            codigo=codigo,
+            codigo=self._next_codigo(db),
             descripcion=descripcion,
             cantidad=cantidad,
+            fecha_entrega_estimada=fecha_entrega_estimada,
             demasia=demasia,
             modo_color=modo_color,
             tipo_impresion=tipo_impresion,
@@ -112,15 +145,17 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         db.add(db_obj)
         db.flush()
 
-        for proceso_nombre in self._procesos_por_tipo_servicio(
+        for proceso_nombre, proceso_area in self._procesos_por_tipo_servicio(
             tipo_servicio=tipo_servicio,
             procesos_personalizados=procesos_personalizados,
+            ruta_acabados=ruta_acabados,
         ):
             db.add(
                 OrdenProceso(
                     orden_id=None,
                     orden_produccion_id=db_obj.id,
                     tipo_proceso=proceso_nombre,
+                    area=proceso_area,
                     estado="PENDIENTE",
                 )
             )

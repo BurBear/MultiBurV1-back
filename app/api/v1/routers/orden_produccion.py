@@ -1,4 +1,5 @@
 from typing import List
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_active_admin, get_current_active_user
@@ -6,13 +7,25 @@ from app.models.cliente import Cliente
 from app.models.formato import Formato
 from app.models.maquina import Maquina
 from app.models.material import Material
+from app.models.orden_proceso import resolve_process_area
 from app.models.orden_trabajo import OrdenTrabajo
 from app.models.user import User
 from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreate, OrdenProduccionUpdate
+from app.schemas.orden_proceso import OrdenProceso, OrdenProcesoFinalizar
+from app.services.crud_incidencia import incidencia as crud_incidencia
+from app.services.crud_orden_proceso import orden_proceso as crud_orden_proceso
 from app.services.crud_orden_produccion import orden_produccion as crud_orden_produccion
 
 
 router = APIRouter()
+
+PROCESO_ROLES = {
+    "DISEÑO": ["ADMIN"],
+    "DISEÃ‘O": ["ADMIN"],
+    "PLACAS": ["ADMIN"],
+    "IMPRESION": ["OPERADOR_IMPRESION"],
+    "ACABADOS": ["OPERADOR_ACABADOS"],
+}
 
 
 def check_active_record(db: Session, model, id: int | None, label: str):
@@ -43,6 +56,126 @@ def validate_references(db: Session, orden_in: OrdenProduccionCreate) -> None:
                 status_code=400,
                 detail="cliente_id debe coincidir con el cliente de la orden de trabajo.",
             )
+
+
+def get_area_proceso(proceso) -> str:
+    return proceso.area or resolve_process_area(proceso.tipo_proceso)
+
+
+def check_permiso_proceso(user: User, proceso) -> None:
+    area_proceso = get_area_proceso(proceso)
+    roles_permitidos = PROCESO_ROLES.get(area_proceso)
+    if not roles_permitidos:
+        raise HTTPException(status_code=403, detail="Estacion de proceso sin rol configurado.")
+    if user.rol not in roles_permitidos:
+        raise HTTPException(status_code=403, detail=f"Permisos denegados para {proceso.tipo_proceso}.")
+
+
+def verificar_propietario(proceso, current_user_id: int) -> None:
+    if proceso.operador_id is not None and proceso.operador_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Este proceso es controlado por otro operador en piso.")
+
+
+def verificar_operador_sin_trabajo_activo(db: Session, current_user_id: int, proceso_id: int | None = None) -> None:
+    proceso_activo = crud_orden_proceso.get_active_by_operador(
+        db,
+        operador_id=current_user_id,
+        exclude_proceso_id=proceso_id,
+    )
+    if proceso_activo:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya tienes una orden de produccion en proceso o pausada. Finalizala antes de iniciar otra.",
+        )
+
+
+def check_orden_produccion_activa(orden_db) -> None:
+    if orden_db.estado == "ANULADA":
+        raise HTTPException(status_code=400, detail="La orden de produccion esta ANULADA.")
+
+
+def get_orden_produccion_or_404(db: Session, id: int):
+    orden_db = crud_orden_produccion.get(db, id=id)
+    if not orden_db:
+        raise HTTPException(status_code=404, detail="Orden de produccion no encontrada.")
+    return orden_db
+
+
+def verificar_secuencia_produccion(db: Session, orden_produccion_id: int, tipo_proceso: str) -> None:
+    procesos_existentes = crud_orden_proceso.get_all_by_orden_produccion(db, orden_produccion_id)
+    idx = next((i for i, proceso in enumerate(procesos_existentes) if proceso.tipo_proceso == tipo_proceso), -1)
+    if idx == -1:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+
+    if idx > 0:
+        proceso_anterior = procesos_existentes[idx - 1]
+        if proceso_anterior.estado != "TERMINADO":
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se puede iniciar. El proceso previo ({proceso_anterior.tipo_proceso}) no esta TERMINADO.",
+            )
+
+
+def check_sin_incidencias_abiertas(db: Session, proceso_id: int) -> None:
+    if crud_incidencia.has_open_for_proceso(db, proceso_id=proceso_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Este proceso tiene una incidencia abierta. Debe resolverse antes de continuar.",
+        )
+
+
+def validar_cantidades_cierre(
+    area_proceso: str,
+    cierre: OrdenProcesoFinalizar | None,
+    cantidad_planificada: int,
+) -> tuple[int | None, int | None]:
+    if area_proceso != "IMPRESION":
+        if cierre is None:
+            return None, None
+        if cierre.cantidad_buena is not None and cierre.cantidad_buena < 0:
+            raise HTTPException(status_code=422, detail="cantidad_buena no puede ser negativa.")
+        if cierre.cantidad_mala is not None and cierre.cantidad_mala < 0:
+            raise HTTPException(status_code=422, detail="cantidad_mala no puede ser negativa.")
+        return cierre.cantidad_buena, cierre.cantidad_mala
+
+    if cierre is None or cierre.cantidad_buena is None or cierre.cantidad_mala is None:
+        raise HTTPException(
+            status_code=422,
+            detail="cantidad_buena y cantidad_mala son obligatorias para finalizar este proceso.",
+        )
+
+    if cierre.cantidad_buena < 0 or cierre.cantidad_mala < 0:
+        raise HTTPException(status_code=422, detail="Las cantidades buena y mala no pueden ser negativas.")
+
+    total_registrado = cierre.cantidad_buena + cierre.cantidad_mala
+    if total_registrado <= 0:
+        raise HTTPException(status_code=422, detail="La suma de cantidad buena y mala debe ser mayor que cero.")
+
+    if total_registrado > cantidad_planificada:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La suma de cantidad buena y mala no puede superar la cantidad planificada ({cantidad_planificada}).",
+        )
+
+    return cierre.cantidad_buena, cierre.cantidad_mala
+
+
+def sync_estado_orden_produccion(db: Session, orden_db) -> None:
+    procesos = crud_orden_proceso.get_all_by_orden_produccion(db, orden_db.id)
+    estados = [proceso.estado for proceso in procesos]
+
+    if estados and all(estado == "TERMINADO" for estado in estados):
+        orden_db.estado = "TERMINADO"
+    elif "EN_PROCESO" in estados:
+        orden_db.estado = "EN_PROCESO"
+    elif "PAUSADO" in estados:
+        orden_db.estado = "PAUSADO"
+    else:
+        orden_db.estado = "PENDIENTE"
+
+    db.add(orden_db)
+    db.commit()
+    db.refresh(orden_db)
 
 
 @router.get("/", response_model=List[OrdenProduccion])
@@ -92,3 +225,158 @@ def update_orden_produccion(
     check_active_record(db, Formato, orden_in.formato_id, "Formato")
     check_active_record(db, Maquina, orden_in.maquina_id, "Maquina")
     return crud_orden_produccion.update(db=db, db_obj=orden_db, obj_in=orden_in)
+
+
+@router.put("/{id}/procesos/{tipo}/iniciar", response_model=OrdenProceso)
+def iniciar_proceso_produccion(
+    *,
+    id: int,
+    tipo: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProceso:
+    orden_db = get_orden_produccion_or_404(db, id)
+    check_orden_produccion_activa(orden_db)
+
+    proceso = crud_orden_proceso.get_by_orden_produccion_and_tipo(db, orden_produccion_id=id, tipo_proceso=tipo)
+    if not proceso:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+    check_permiso_proceso(current_user, proceso)
+    if proceso.estado != "PENDIENTE":
+        raise HTTPException(status_code=400, detail=f"No se puede iniciar un proceso en estado {proceso.estado}.")
+
+    check_sin_incidencias_abiertas(db, proceso.id)
+    verificar_secuencia_produccion(db, id, tipo)
+    verificar_operador_sin_trabajo_activo(db, current_user.id, proceso.id)
+
+    exito = crud_orden_proceso.iniciar_proceso_atomico(db, proceso.id, current_user.id)
+    if not exito:
+        raise HTTPException(status_code=409, detail="El proceso ya fue reclamado por otro operador.")
+
+    db.refresh(proceso)
+    crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="INICIAR")
+    sync_estado_orden_produccion(db, orden_db)
+    return proceso
+
+
+@router.put("/{id}/procesos/{tipo}/pausar", response_model=OrdenProceso)
+def pausar_proceso_produccion(
+    *,
+    id: int,
+    tipo: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProceso:
+    orden_db = get_orden_produccion_or_404(db, id)
+    check_orden_produccion_activa(orden_db)
+
+    proceso = crud_orden_proceso.get_by_orden_produccion_and_tipo(db, orden_produccion_id=id, tipo_proceso=tipo)
+    if not proceso:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+    check_permiso_proceso(current_user, proceso)
+    if proceso.estado != "EN_PROCESO":
+        raise HTTPException(status_code=400, detail="Solamente se puede pausar si esta EN_PROCESO.")
+
+    check_sin_incidencias_abiertas(db, proceso.id)
+    verificar_propietario(proceso, current_user.id)
+    proceso.estado = "PAUSADO"
+    crud_orden_proceso.update_proceso(db=db, proceso=proceso)
+    crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="PAUSAR")
+    sync_estado_orden_produccion(db, orden_db)
+    return proceso
+
+
+@router.put("/{id}/procesos/{tipo}/reanudar", response_model=OrdenProceso)
+def reanudar_proceso_produccion(
+    *,
+    id: int,
+    tipo: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProceso:
+    orden_db = get_orden_produccion_or_404(db, id)
+    check_orden_produccion_activa(orden_db)
+
+    proceso = crud_orden_proceso.get_by_orden_produccion_and_tipo(db, orden_produccion_id=id, tipo_proceso=tipo)
+    if not proceso:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+    check_permiso_proceso(current_user, proceso)
+    if proceso.estado != "PAUSADO":
+        raise HTTPException(status_code=400, detail="Solamente se puede reanudar si esta PAUSADO.")
+
+    check_sin_incidencias_abiertas(db, proceso.id)
+    verificar_propietario(proceso, current_user.id)
+    verificar_operador_sin_trabajo_activo(db, current_user.id, proceso.id)
+    proceso.operador_id = current_user.id
+    proceso.estado = "EN_PROCESO"
+    crud_orden_proceso.update_proceso(db=db, proceso=proceso)
+    crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="REANUDAR")
+    sync_estado_orden_produccion(db, orden_db)
+    return proceso
+
+
+@router.put("/{id}/procesos/{tipo}/finalizar", response_model=OrdenProceso)
+def finalizar_proceso_produccion(
+    *,
+    id: int,
+    tipo: str,
+    cierre: OrdenProcesoFinalizar | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProceso:
+    orden_db = get_orden_produccion_or_404(db, id)
+    check_orden_produccion_activa(orden_db)
+
+    proceso = crud_orden_proceso.get_by_orden_produccion_and_tipo(db, orden_produccion_id=id, tipo_proceso=tipo)
+    if not proceso:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+    check_permiso_proceso(current_user, proceso)
+    if proceso.estado != "EN_PROCESO":
+        raise HTTPException(status_code=400, detail="El proceso debe estar EN_PROCESO para finalizar.")
+
+    check_sin_incidencias_abiertas(db, proceso.id)
+    verificar_propietario(proceso, current_user.id)
+    cantidad_planificada = orden_db.cantidad + (orden_db.demasia or 0)
+    cantidad_buena, cantidad_mala = validar_cantidades_cierre(get_area_proceso(proceso), cierre, cantidad_planificada)
+    proceso.estado = "TERMINADO"
+    proceso.fecha_fin = datetime.utcnow()
+    proceso.cantidad_buena = cantidad_buena
+    proceso.cantidad_mala = cantidad_mala
+    crud_orden_proceso.update_proceso(db=db, proceso=proceso)
+    crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="FINALIZAR")
+    sync_estado_orden_produccion(db, orden_db)
+    return proceso
+
+
+@router.put("/{id}/procesos/{tipo}/reabrir", response_model=OrdenProceso)
+def reabrir_proceso_produccion(
+    *,
+    id: int,
+    tipo: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_admin),
+) -> OrdenProceso:
+    orden_db = get_orden_produccion_or_404(db, id)
+
+    proceso = crud_orden_proceso.get_by_orden_produccion_and_tipo(db, orden_produccion_id=id, tipo_proceso=tipo)
+    if not proceso:
+        raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
+    if proceso.estado != "TERMINADO":
+        raise HTTPException(status_code=400, detail="Solo se puede reabrir un proceso TERMINADO.")
+
+    procesos_existentes = crud_orden_proceso.get_all_by_orden_produccion(db, id)
+    idx = next((i for i, item in enumerate(procesos_existentes) if item.tipo_proceso == tipo), -1)
+    if idx != -1:
+        for proceso_posterior in procesos_existentes[idx + 1:]:
+            if proceso_posterior.estado != "PENDIENTE":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No puedes reabrir {tipo} porque {proceso_posterior.tipo_proceso} ya comenzo.",
+                )
+
+    proceso.estado = "PAUSADO"
+    proceso.fecha_fin = None
+    crud_orden_proceso.update_proceso(db=db, proceso=proceso)
+    crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="REABRIR")
+    sync_estado_orden_produccion(db, orden_db)
+    return proceso

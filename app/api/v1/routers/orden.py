@@ -77,6 +77,19 @@ def verificar_propietario(proceso, current_user_id: int):
     if proceso.operador_id is not None and proceso.operador_id != current_user_id:
         raise HTTPException(status_code=403, detail="Este proceso es controlado por otro operador en piso.")
 
+def verificar_operador_sin_trabajo_activo(db: Session, current_user_id: int, proceso_id: int | None = None):
+    proceso_activo = crud_orden_proceso.get_active_by_operador(
+        db,
+        operador_id=current_user_id,
+        exclude_proceso_id=proceso_id,
+    )
+    if proceso_activo:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya tienes una orden de produccion en proceso o pausada. Finalizala antes de iniciar otra.",
+        )
+
+
 def check_orden_activa(db: Session, orden_id: int):
     orden_db = crud_orden.get(db, id=orden_id)
     if not orden_db:
@@ -106,6 +119,7 @@ def iniciar_proceso(
         raise HTTPException(status_code=400, detail=f"No se puede iniciar un proceso que está en estado {proceso.estado}.")
 
     verificar_secuencia(db, orden_id, tipo)
+    verificar_operador_sin_trabajo_activo(db, current_user.id, proceso.id)
 
     # Inyección Atómica para Concurrencia
     exito = crud_orden_proceso.iniciar_proceso_atomico(db, proceso.id, current_user.id)
@@ -167,6 +181,8 @@ def reanudar_proceso(
         raise HTTPException(status_code=400, detail="Solamente se pueden reanudar instancias que estén en PAUSADO.")
     
     # Asignar operador sin importar quién lo detuvo (Hand-off)
+    verificar_propietario(proceso, current_user.id)
+    verificar_operador_sin_trabajo_activo(db, current_user.id, proceso.id)
     proceso.operador_id = current_user.id
     proceso.estado = "EN_PROCESO"
     crud_orden_proceso.update_proceso(db=db, proceso=proceso)
