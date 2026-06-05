@@ -1,28 +1,40 @@
-from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator
-from pydantic_core.core_schema import ValidationInfo
+import json
+from typing import List
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "MultiBurV1 API"
     ENVIRONMENT: str = "development"
     
-    CORS_ORIGINS: List[AnyHttpUrl] | List[str] = ["http://localhost", "http://localhost:3000"]
+    CORS_ORIGINS: List[str] = ["http://localhost", "http://localhost:3000", "http://localhost:5173"]
     
     # Base de datos
-    POSTGRES_SERVER: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
+    POSTGRES_SERVER: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: str | None = None
+    POSTGRES_DB: str | None = None
     DATABASE_URL: str | None = None
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str):
+            value = v.strip()
+            if not value:
+                return []
+            if value.startswith("["):
+                return json.loads(value)
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return v
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_connection(cls, v: str | None, info: ValidationInfo) -> str:
-        if isinstance(v, str):
+    def assemble_db_connection(cls, v: str | None) -> str:
+        if isinstance(v, str) and v.strip():
             return v
-        values = info.data
-        return f"postgresql://{values.get('POSTGRES_USER')}:{values.get('POSTGRES_PASSWORD')}@{values.get('POSTGRES_SERVER')}/{values.get('POSTGRES_DB')}"
+        return "sqlite:///./test.db"
 
     # JWT
     SECRET_KEY: str
