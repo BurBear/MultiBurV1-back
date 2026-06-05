@@ -27,6 +27,7 @@ class CRUDOrdenTrabajo(CRUDBase[OrdenTrabajo, OrdenTrabajoCreate, OrdenTrabajoUp
             tiene_orden_compra=obj_in.tiene_orden_compra,
             numero_orden_compra=obj_in.numero_orden_compra,
             fecha_orden_compra=obj_in.fecha_orden_compra,
+            observacion_orden_compra=obj_in.observacion_orden_compra,
             fecha_entrega_estimada=obj_in.fecha_entrega_estimada,
             estado="PENDIENTE",
             user_id=user_id,

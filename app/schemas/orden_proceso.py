@@ -12,6 +12,7 @@ class OrdenProcesoHistorial(OrdenProcesoHistorialBase):
     id: int
     proceso_id: int
     operador_id: int
+    operador_nombre: str | None = None
     fecha: datetime
 
     model_config = {"from_attributes": True}
@@ -50,6 +51,7 @@ class OrdenProceso(OrdenProcesoBase):
     fecha_fin: datetime | None = None
     cantidad_buena: int | None = None
     cantidad_mala: int | None = None
+    operador_nombre: str | None = None
     historial: list[OrdenProcesoHistorial] = []
 
     model_config = {"from_attributes": True}

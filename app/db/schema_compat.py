@@ -202,6 +202,9 @@ def ensure_sqlite_orden_trabajo_delivery_fields(engine: Engine) -> None:
         "observacion_guia_entrega": "VARCHAR",
         "observacion_entrega": "VARCHAR",
         "fecha_entrega_real": "DATETIME",
+        "observacion_orden_compra": "VARCHAR",
+        "fecha_registro_orden_compra": "DATETIME",
+        "orden_compra_user_id": "INTEGER",
     }
 
     with engine.begin() as connection:

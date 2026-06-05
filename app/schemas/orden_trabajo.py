@@ -11,6 +11,7 @@ class OrdenTrabajoBase(BaseModel):
     tiene_orden_compra: bool = False
     numero_orden_compra: str | None = None
     fecha_orden_compra: date | None = None
+    observacion_orden_compra: str | None = None
     fecha_entrega_estimada: date | None = None
 
 
@@ -25,8 +26,15 @@ class OrdenTrabajoUpdate(BaseModel):
     tiene_orden_compra: bool | None = None
     numero_orden_compra: str | None = None
     fecha_orden_compra: date | None = None
+    observacion_orden_compra: str | None = None
     fecha_entrega_estimada: date | None = None
     estado: str | None = None
+
+
+class OrdenTrabajoOrdenCompra(BaseModel):
+    numero_orden_compra: str
+    fecha_orden_compra: date | None = None
+    observacion_orden_compra: str | None = None
 
 
 class OrdenTrabajoEntrega(BaseModel):
@@ -45,6 +53,8 @@ class OrdenTrabajo(OrdenTrabajoBase):
     observacion_guia_entrega: str | None = None
     observacion_entrega: str | None = None
     fecha_entrega_real: datetime | None = None
+    fecha_registro_orden_compra: datetime | None = None
+    orden_compra_user_id: int | None = None
     user_id: int
     created_at: datetime
     ordenes_produccion: list[OrdenProduccion] = []

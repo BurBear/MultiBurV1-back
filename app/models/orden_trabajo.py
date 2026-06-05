@@ -15,6 +15,9 @@ class OrdenTrabajo(Base):
     tiene_orden_compra = Column(Boolean, default=False, nullable=False)
     numero_orden_compra = Column(String, nullable=True)
     fecha_orden_compra = Column(Date, nullable=True)
+    observacion_orden_compra = Column(String, nullable=True)
+    fecha_registro_orden_compra = Column(DateTime, nullable=True)
+    orden_compra_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     fecha_entrega_estimada = Column(Date, nullable=True)
     estado = Column(String, default="PENDIENTE", nullable=False)
     requiere_guia_entrega = Column(Boolean, default=False, nullable=False)
@@ -26,7 +29,8 @@ class OrdenTrabajo(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     cliente = relationship("Cliente", back_populates="ordenes_trabajo")
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
+    orden_compra_user = relationship("User", foreign_keys=[orden_compra_user_id])
     ordenes_produccion = relationship(
         "OrdenProduccion",
         back_populates="orden_trabajo",

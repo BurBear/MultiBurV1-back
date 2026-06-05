@@ -6,7 +6,13 @@ from app.api.deps import get_db, get_current_active_admin, get_current_active_us
 from app.models.cliente import Cliente as ClienteModel
 from app.models.user import User
 from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreateFromTrabajo
-from app.schemas.orden_trabajo import OrdenTrabajo, OrdenTrabajoCreate, OrdenTrabajoEntrega, OrdenTrabajoUpdate
+from app.schemas.orden_trabajo import (
+    OrdenTrabajo,
+    OrdenTrabajoCreate,
+    OrdenTrabajoEntrega,
+    OrdenTrabajoOrdenCompra,
+    OrdenTrabajoUpdate,
+)
 from app.services.crud_orden_produccion import orden_produccion as crud_orden_produccion
 from app.services.crud_orden_trabajo import orden_trabajo as crud_orden_trabajo
 
@@ -35,6 +41,24 @@ def orden_trabajo_completa(orden_db) -> bool:
         )
         for produccion in producciones
     )
+
+
+def produccion_tiene_inicio(produccion) -> bool:
+    if produccion.estado not in {"PENDIENTE", "ANULADA"}:
+        return True
+    return any(proceso.estado != "PENDIENTE" for proceso in (produccion.procesos or []))
+
+
+def orden_trabajo_tiene_produccion_iniciada(orden_db) -> bool:
+    return any(produccion_tiene_inicio(produccion) for produccion in (orden_db.ordenes_produccion or []))
+
+
+def check_orden_trabajo_editable(orden_db) -> None:
+    if orden_db.estado in {"ANULADA", "ENTREGADA"} or orden_trabajo_tiene_produccion_iniciada(orden_db):
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede editar o anular una orden de trabajo con producciones iniciadas.",
+        )
 
 
 @router.get("/", response_model=List[OrdenTrabajo])
@@ -82,7 +106,60 @@ def update_orden_trabajo(
     orden_db = crud_orden_trabajo.get(db, id=id)
     if not orden_db:
         raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada.")
+
+    update_data = orden_in.model_dump(exclude_unset=True)
+    if not update_data:
+        return orden_db
+
+    estado = update_data.get("estado")
+    if estado is not None and estado not in {"PENDIENTE", "ANULADA"}:
+        raise HTTPException(
+            status_code=400,
+            detail="El estado de la orden de trabajo solo puede cambiarse a ANULADA desde este endpoint.",
+        )
+
+    check_orden_trabajo_editable(orden_db)
+
+    if estado == "ANULADA":
+        for produccion in orden_db.ordenes_produccion or []:
+            produccion.estado = "ANULADA"
+            db.add(produccion)
+            for proceso in produccion.procesos or []:
+                proceso.estado = "ANULADA"
+                db.add(proceso)
+
     return crud_orden_trabajo.update(db=db, db_obj=orden_db, obj_in=orden_in)
+
+
+@router.patch("/{id}/orden-compra", response_model=OrdenTrabajo)
+def registrar_orden_compra(
+    *,
+    id: int,
+    orden_compra_in: OrdenTrabajoOrdenCompra,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_admin),
+) -> OrdenTrabajo:
+    orden_db = crud_orden_trabajo.get(db, id=id)
+    if not orden_db:
+        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada.")
+    if orden_db.estado == "ANULADA":
+        raise HTTPException(status_code=400, detail="La orden de trabajo esta ANULADA.")
+    if not orden_db.tiene_orden_compra:
+        raise HTTPException(status_code=400, detail="Esta orden de trabajo no requiere OC.")
+
+    numero_orden_compra = (orden_compra_in.numero_orden_compra or "").strip()
+    if not numero_orden_compra:
+        raise HTTPException(status_code=400, detail="Ingresa el numero de orden de compra.")
+
+    orden_db.numero_orden_compra = numero_orden_compra
+    orden_db.fecha_orden_compra = orden_compra_in.fecha_orden_compra
+    orden_db.observacion_orden_compra = (orden_compra_in.observacion_orden_compra or "").strip() or None
+    orden_db.fecha_registro_orden_compra = datetime.utcnow()
+    orden_db.orden_compra_user_id = current_user.id
+    db.add(orden_db)
+    db.commit()
+    db.refresh(orden_db)
+    return orden_db
 
 
 @router.put("/{id}/entregar", response_model=OrdenTrabajo)

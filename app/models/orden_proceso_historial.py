@@ -14,3 +14,7 @@ class OrdenProcesoHistorial(Base):
 
     proceso = relationship("OrdenProceso", back_populates="historial")
     operador = relationship("User")
+
+    @property
+    def operador_nombre(self) -> str | None:
+        return self.operador.nombre if self.operador else None

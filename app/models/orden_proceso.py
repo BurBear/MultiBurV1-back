@@ -51,3 +51,7 @@ class OrdenProceso(Base):
     orden_produccion = relationship("OrdenProduccion", back_populates="procesos")
     operador = relationship("User")
     historial = relationship("OrdenProcesoHistorial", back_populates="proceso", cascade="all, delete-orphan", order_by="OrdenProcesoHistorial.fecha")
+
+    @property
+    def operador_nombre(self) -> str | None:
+        return self.operador.nombre if self.operador else None

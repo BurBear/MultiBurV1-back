@@ -94,6 +94,18 @@ def check_orden_produccion_activa(orden_db) -> None:
         raise HTTPException(status_code=400, detail="La orden de produccion esta ANULADA.")
 
 
+def orden_produccion_tiene_procesos_iniciados(orden_db) -> bool:
+    return any(proceso.estado != "PENDIENTE" for proceso in (orden_db.procesos or []))
+
+
+def check_orden_produccion_editable(orden_db) -> None:
+    if orden_db.estado != "PENDIENTE" or orden_produccion_tiene_procesos_iniciados(orden_db):
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede editar o anular una orden de produccion que ya inicio.",
+        )
+
+
 def get_orden_produccion_or_404(db: Session, id: int):
     orden_db = crud_orden_produccion.get(db, id=id)
     if not orden_db:
@@ -221,6 +233,25 @@ def update_orden_produccion(
     orden_db = crud_orden_produccion.get(db, id=id)
     if not orden_db:
         raise HTTPException(status_code=404, detail="Orden de produccion no encontrada.")
+
+    update_data = orden_in.model_dump(exclude_unset=True)
+    if not update_data:
+        return orden_db
+
+    estado = update_data.get("estado")
+    if estado is not None and estado not in {"PENDIENTE", "ANULADA"}:
+        raise HTTPException(
+            status_code=400,
+            detail="El estado de la orden de produccion solo puede cambiarse a ANULADA desde este endpoint.",
+        )
+
+    check_orden_produccion_editable(orden_db)
+
+    if estado == "ANULADA":
+        for proceso in orden_db.procesos or []:
+            proceso.estado = "ANULADA"
+            db.add(proceso)
+
     check_active_record(db, Material, orden_in.material_id, "Material")
     check_active_record(db, Formato, orden_in.formato_id, "Formato")
     check_active_record(db, Maquina, orden_in.maquina_id, "Maquina")
