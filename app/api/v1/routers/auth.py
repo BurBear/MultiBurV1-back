@@ -73,10 +73,11 @@ def test_admin_endpoint(current_user: User = Depends(get_current_active_admin)):
 @router.post("/register", response_model=User)
 def register_user(
     user_in: UserCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _current_admin: User = Depends(get_current_active_admin),
 ):
     """
-    Endpoint temporal para crear usuarios
+    Crear usuarios del sistema. Solo ADMIN autenticado.
     """
     existing_user = crud_user.get_by_email(db, email=user_in.email)
 
