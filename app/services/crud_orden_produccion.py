@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.orden_produccion import OrdenProduccion
@@ -12,6 +13,8 @@ from app.services.base import CRUDBase
 
 
 class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, OrdenProduccionUpdate]):
+    DUPLICATE_LIMIT = 5
+
     def _next_codigo(self, db: Session) -> str:
         prefix = "OP-"
         numeric_codes = []
@@ -50,6 +53,63 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             procesos_base = [tipo for tipo in SECUENCIA_PROCESOS if tipo in (procesos_personalizados or [])]
             return [item for proceso in procesos_base for item in expand(proceso)]
         return []
+
+    def _base_duplicate_description(self, descripcion: str) -> str:
+        return re.sub(r"\s+\([1-5]\)$", "", (descripcion or "").strip())
+
+    def _next_duplicate_description(self, db: Session, *, orden: OrdenProduccion) -> str:
+        base_description = self._base_duplicate_description(orden.descripcion)
+        used_numbers: set[int] = set()
+        pattern = re.compile(rf"^{re.escape(base_description)}\s+\(([1-5])\)$", re.IGNORECASE)
+
+        candidates = db.query(OrdenProduccion.descripcion).filter(
+            OrdenProduccion.cliente_id == orden.cliente_id,
+            OrdenProduccion.orden_trabajo_id == orden.orden_trabajo_id,
+        ).all()
+
+        for (descripcion,) in candidates:
+            match = pattern.match((descripcion or "").strip())
+            if match:
+                used_numbers.add(int(match.group(1)))
+
+        if len(used_numbers) >= self.DUPLICATE_LIMIT:
+            raise ValueError("Esta orden de produccion ya fue duplicada 5 veces.")
+
+        for number in range(1, self.DUPLICATE_LIMIT + 1):
+            if number not in used_numbers:
+                return f"{base_description} ({number})"
+
+        raise ValueError("Esta orden de produccion ya fue duplicada 5 veces.")
+
+    def _procesos_iniciados(self, orden: OrdenProduccion) -> bool:
+        if any(proceso.estado != "PENDIENTE" for proceso in (orden.procesos or [])):
+            return True
+        return any(juego.estado != "PENDIENTE" for juego in (orden.juegos_impresion or []))
+
+    def _procesos_personalizados_from_orden(self, orden: OrdenProduccion) -> list[str] | None:
+        if orden.tipo_servicio != "PERSONALIZADO":
+            return None
+
+        procesos = []
+        has_acabados = False
+        for proceso in orden.procesos or []:
+            area = proceso.area or resolve_process_area(proceso.tipo_proceso)
+            if area == "ACABADOS":
+                has_acabados = True
+            elif proceso.tipo_proceso not in procesos:
+                procesos.append(proceso.tipo_proceso)
+
+        if has_acabados and "ACABADOS" not in procesos:
+            procesos.append("ACABADOS")
+        return procesos
+
+    def _ruta_acabados_from_orden(self, orden: OrdenProduccion) -> list[str] | None:
+        ruta = [
+            proceso.tipo_proceso
+            for proceso in (orden.procesos or [])
+            if (proceso.area or resolve_process_area(proceso.tipo_proceso)) == "ACABADOS"
+        ]
+        return ruta or None
 
     def create(self, db: Session, *, obj_in: OrdenProduccionCreate, user_id: int) -> OrdenProduccion:
         return self._create_with_processes(
@@ -103,6 +163,35 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             tipo_servicio=obj_in.tipo_servicio,
             procesos_personalizados=obj_in.procesos_personalizados,
             ruta_acabados=obj_in.ruta_acabados,
+        )
+
+    def duplicate(self, db: Session, *, orden: OrdenProduccion, user_id: int) -> OrdenProduccion:
+        if orden.estado != "PENDIENTE" or self._procesos_iniciados(orden):
+            raise ValueError("Solo se puede duplicar una orden pendiente y sin procesos iniciados.")
+
+        if orden.orden_trabajo and orden.orden_trabajo.estado in {"ANULADA", "ENTREGADA"}:
+            raise ValueError("No se puede duplicar una OP de una orden de trabajo anulada o entregada.")
+
+        return self._create_with_processes(
+            db=db,
+            user_id=user_id,
+            orden_trabajo_id=orden.orden_trabajo_id,
+            cliente_id=orden.cliente_id,
+            codigo=None,
+            descripcion=self._next_duplicate_description(db, orden=orden),
+            cantidad=orden.cantidad,
+            fecha_entrega_estimada=orden.fecha_entrega_estimada,
+            demasia=orden.demasia,
+            modo_color=orden.modo_color,
+            tipo_impresion=orden.tipo_impresion,
+            cantidad_juegos_placas=orden.cantidad_juegos_placas or None,
+            material_id=orden.material_id,
+            formato_id=orden.formato_id,
+            maquina_id=orden.maquina_id,
+            tipo_origen=orden.tipo_origen,
+            tipo_servicio=orden.tipo_servicio,
+            procesos_personalizados=self._procesos_personalizados_from_orden(orden),
+            ruta_acabados=self._ruta_acabados_from_orden(orden),
         )
 
     def _create_with_processes(

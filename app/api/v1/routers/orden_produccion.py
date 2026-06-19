@@ -275,6 +275,20 @@ def read_orden_produccion(
     return orden_db
 
 
+@router.post("/{id}/duplicar", response_model=OrdenProduccion)
+def duplicate_orden_produccion(
+    *,
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_admin),
+) -> OrdenProduccion:
+    orden_db = get_orden_produccion_or_404(db, id)
+    try:
+        return crud_orden_produccion.duplicate(db=db, orden=orden_db, user_id=current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.put("/{id}", response_model=OrdenProduccion)
 def update_orden_produccion(
     *,
