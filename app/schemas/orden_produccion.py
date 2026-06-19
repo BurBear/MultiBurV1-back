@@ -41,6 +41,8 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
     def validate_cantidad_juegos_placas(cls, value: int | None) -> int | None:
         if value is not None and value <= 0:
             raise ValueError("cantidad_juegos_placas debe ser mayor que cero")
+        if value is not None and value > 20:
+            raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
         return value
 
 
@@ -74,9 +76,6 @@ class OrdenProduccionCreate(OrdenProduccionBase):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
         if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
             raise ValueError("La ruta de acabados no puede contener elementos duplicados")
-        if self.tipo_impresion in {"T/R", "T+R"} and self.cantidad_juegos_placas is not None:
-            if self.cantidad_juegos_placas % 2 != 0:
-                raise ValueError("cantidad_juegos_placas debe ser par para impresion T/R o T+R")
         return self
 
 
@@ -101,9 +100,6 @@ class OrdenProduccionCreateFromTrabajo(OrdenProduccionFichaTecnicaBase):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
         if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
             raise ValueError("La ruta de acabados no puede contener elementos duplicados")
-        if self.tipo_impresion in {"T/R", "T+R"} and self.cantidad_juegos_placas is not None:
-            if self.cantidad_juegos_placas % 2 != 0:
-                raise ValueError("cantidad_juegos_placas debe ser par para impresion T/R o T+R")
         return self
 
 

@@ -69,16 +69,15 @@ class CRUDOrdenImpresionJuego:
         if tipo_impresion not in {"TIRA", "T/R", "T+R"}:
             return []
 
-        total_lados = cantidad_juegos_placas or (2 if tipo_impresion in {"T/R", "T+R"} else 1)
-        if total_lados <= 0:
+        cantidad_configurada = cantidad_juegos_placas or 1
+        if cantidad_configurada <= 0:
             return []
+        if cantidad_configurada > 20:
+            raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
 
         juegos: list[OrdenImpresionJuego] = []
         if tipo_impresion in {"T/R", "T+R"}:
-            if total_lados % 2 != 0:
-                raise ValueError("cantidad_juegos_placas debe ser par para impresion T/R o T+R")
-
-            for grupo in range(1, (total_lados // 2) + 1):
+            for grupo in range(1, cantidad_configurada + 1):
                 juegos.extend([
                     OrdenImpresionJuego(
                         orden_produccion_id=orden_produccion.id,
@@ -98,7 +97,7 @@ class CRUDOrdenImpresionJuego:
                     ),
                 ])
         else:
-            for grupo in range(1, total_lados + 1):
+            for grupo in range(1, cantidad_configurada + 1):
                 juegos.append(
                     OrdenImpresionJuego(
                         orden_produccion_id=orden_produccion.id,
