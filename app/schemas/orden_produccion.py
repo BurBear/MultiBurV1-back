@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, field_validator, model_validator
+from .orden_impresion_juego import OrdenImpresionJuego
 from .orden_proceso import OrdenProceso
 
 
@@ -12,6 +13,7 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
     demasia: int | None = None
     modo_color: str | None = None
     tipo_impresion: str | None = None
+    cantidad_juegos_placas: int | None = None
 
     @field_validator("demasia")
     @classmethod
@@ -32,6 +34,13 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
     def validate_tipo_impresion(cls, value: str | None) -> str | None:
         if value is not None and value not in TIPO_IMPRESION_VALIDOS:
             raise ValueError("tipo_impresion debe ser TIRA, T/R, T+R o DOBLE PINZA")
+        return value
+
+    @field_validator("cantidad_juegos_placas")
+    @classmethod
+    def validate_cantidad_juegos_placas(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("cantidad_juegos_placas debe ser mayor que cero")
         return value
 
 
@@ -65,6 +74,9 @@ class OrdenProduccionCreate(OrdenProduccionBase):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
         if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
             raise ValueError("La ruta de acabados no puede contener elementos duplicados")
+        if self.tipo_impresion in {"T/R", "T+R"} and self.cantidad_juegos_placas is not None:
+            if self.cantidad_juegos_placas % 2 != 0:
+                raise ValueError("cantidad_juegos_placas debe ser par para impresion T/R o T+R")
         return self
 
 
@@ -89,6 +101,9 @@ class OrdenProduccionCreateFromTrabajo(OrdenProduccionFichaTecnicaBase):
                 raise ValueError("La lista de procesos no puede contener elementos duplicados")
         if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
             raise ValueError("La ruta de acabados no puede contener elementos duplicados")
+        if self.tipo_impresion in {"T/R", "T+R"} and self.cantidad_juegos_placas is not None:
+            if self.cantidad_juegos_placas % 2 != 0:
+                raise ValueError("cantidad_juegos_placas debe ser par para impresion T/R o T+R")
         return self
 
 
@@ -114,6 +129,7 @@ class OrdenProduccion(BaseModel):
     demasia: int | None = None
     modo_color: str | None = None
     tipo_impresion: str | None = None
+    cantidad_juegos_placas: int = 0
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
@@ -123,5 +139,6 @@ class OrdenProduccion(BaseModel):
     user_id: int
     created_at: datetime
     procesos: list[OrdenProceso] = []
+    juegos_impresion: list[OrdenImpresionJuego] = []
 
     model_config = {"from_attributes": True}

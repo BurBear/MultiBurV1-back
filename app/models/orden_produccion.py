@@ -38,3 +38,13 @@ class OrdenProduccion(Base):
         cascade="all, delete-orphan",
         order_by="OrdenProceso.id",
     )
+    juegos_impresion = relationship(
+        "OrdenImpresionJuego",
+        back_populates="orden_produccion",
+        cascade="all, delete-orphan",
+        order_by="OrdenImpresionJuego.id",
+    )
+
+    @property
+    def cantidad_juegos_placas(self) -> int:
+        return len(self.juegos_impresion or [])

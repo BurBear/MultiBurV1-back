@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.orden_produccion import OrdenProduccion
 from app.models.orden_proceso import OrdenProceso, SECUENCIA_PROCESOS, resolve_process_area
+from app.services.crud_orden_impresion_juego import orden_impresion_juego as crud_orden_impresion_juego
 from app.schemas.orden_produccion import (
     OrdenProduccionCreate,
     OrdenProduccionCreateFromTrabajo,
@@ -63,6 +64,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             demasia=obj_in.demasia,
             modo_color=obj_in.modo_color,
             tipo_impresion=obj_in.tipo_impresion,
+            cantidad_juegos_placas=obj_in.cantidad_juegos_placas,
             material_id=obj_in.material_id,
             formato_id=obj_in.formato_id,
             maquina_id=obj_in.maquina_id,
@@ -93,6 +95,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             demasia=obj_in.demasia,
             modo_color=obj_in.modo_color,
             tipo_impresion=obj_in.tipo_impresion,
+            cantidad_juegos_placas=obj_in.cantidad_juegos_placas,
             material_id=obj_in.material_id,
             formato_id=obj_in.formato_id,
             maquina_id=obj_in.maquina_id,
@@ -116,6 +119,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         demasia: int | None,
         modo_color: str | None,
         tipo_impresion: str | None,
+        cantidad_juegos_placas: int | None,
         material_id: int | None,
         formato_id: int | None,
         maquina_id: int | None,
@@ -145,19 +149,33 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         db.add(db_obj)
         db.flush()
 
+        procesos_creados: list[OrdenProceso] = []
         for proceso_nombre, proceso_area in self._procesos_por_tipo_servicio(
             tipo_servicio=tipo_servicio,
             procesos_personalizados=procesos_personalizados,
             ruta_acabados=ruta_acabados,
         ):
-            db.add(
-                OrdenProceso(
-                    orden_id=None,
-                    orden_produccion_id=db_obj.id,
-                    tipo_proceso=proceso_nombre,
-                    area=proceso_area,
-                    estado="PENDIENTE",
-                )
+            proceso = OrdenProceso(
+                orden_id=None,
+                orden_produccion_id=db_obj.id,
+                tipo_proceso=proceso_nombre,
+                area=proceso_area,
+                estado="PENDIENTE",
+            )
+            db.add(proceso)
+            procesos_creados.append(proceso)
+
+        db.flush()
+        proceso_impresion = next(
+            (proceso for proceso in procesos_creados if resolve_process_area(proceso.tipo_proceso) == "IMPRESION"),
+            None,
+        )
+        if proceso_impresion:
+            crud_orden_impresion_juego.create_for_impresion_process(
+                db,
+                orden_produccion=db_obj,
+                proceso=proceso_impresion,
+                cantidad_juegos_placas=cantidad_juegos_placas,
             )
 
         db.commit()
