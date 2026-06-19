@@ -11,8 +11,10 @@ from app.models.orden_proceso import resolve_process_area
 from app.models.orden_trabajo import OrdenTrabajo
 from app.models.user import User
 from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreate, OrdenProduccionUpdate
+from app.schemas.orden_impresion_juego import OrdenImpresionJuegoFinalizar
 from app.schemas.orden_proceso import OrdenProceso, OrdenProcesoFinalizar
 from app.services.crud_incidencia import incidencia as crud_incidencia
+from app.services.crud_orden_impresion_juego import orden_impresion_juego as crud_orden_impresion_juego
 from app.services.crud_orden_proceso import orden_proceso as crud_orden_proceso
 from app.services.crud_orden_produccion import orden_produccion as crud_orden_produccion
 
@@ -26,6 +28,7 @@ PROCESO_ROLES = {
     "IMPRESION": ["OPERADOR_IMPRESION"],
     "ACABADOS": ["OPERADOR_ACABADOS"],
 }
+TIPOS_IMPRESION_CON_JUEGOS = {"TIRA", "T/R", "T+R"}
 
 
 def check_active_record(db: Session, model, id: int | None, label: str):
@@ -87,6 +90,12 @@ def verificar_operador_sin_trabajo_activo(db: Session, current_user_id: int, pro
             status_code=409,
             detail="Ya tienes una orden de produccion en proceso o pausada. Finalizala antes de iniciar otra.",
         )
+    juego_activo = crud_orden_impresion_juego.get_active_by_operador(db, operador_id=current_user_id)
+    if juego_activo:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya tienes un juego de impresion en proceso o pausado. Finalizalo antes de iniciar otro.",
+        )
 
 
 def check_orden_produccion_activa(orden_db) -> None:
@@ -106,10 +115,46 @@ def check_orden_produccion_editable(orden_db) -> None:
         )
 
 
+def check_tipo_impresion_editable(orden_db, nuevo_tipo: str | None) -> None:
+    tipo_actual = (orden_db.tipo_impresion or "").strip().upper()
+    tipo_nuevo = (nuevo_tipo or "").strip().upper()
+    if tipo_actual == tipo_nuevo:
+        return
+
+    afecta_juegos = tipo_actual in TIPOS_IMPRESION_CON_JUEGOS or tipo_nuevo in TIPOS_IMPRESION_CON_JUEGOS
+    if afecta_juegos and (orden_db.juegos_impresion or []):
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede cambiar el tipo de impresion de una OP que ya tiene juegos de placas configurados.",
+        )
+
+
 def get_orden_produccion_or_404(db: Session, id: int):
     orden_db = crud_orden_produccion.get(db, id=id)
     if not orden_db:
         raise HTTPException(status_code=404, detail="Orden de produccion no encontrada.")
+    return orden_db
+
+
+def get_juego_impresion_or_404(db: Session, juego_id: int):
+    juego = crud_orden_impresion_juego.get(db, id=juego_id)
+    if not juego:
+        raise HTTPException(status_code=404, detail="Juego de impresion no encontrado.")
+    return juego
+
+
+def run_juego_action(action):
+    try:
+        return action()
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def return_orden_after_juego_action(db: Session, orden_db) -> OrdenProduccion:
+    sync_estado_orden_produccion(db, orden_db)
+    db.refresh(orden_db)
     return orden_db
 
 
@@ -133,6 +178,14 @@ def check_sin_incidencias_abiertas(db: Session, proceso_id: int) -> None:
         raise HTTPException(
             status_code=409,
             detail="Este proceso tiene una incidencia abierta. Debe resolverse antes de continuar.",
+        )
+
+
+def check_proceso_sin_juegos_impresion(db: Session, proceso) -> None:
+    if get_area_proceso(proceso) == "IMPRESION" and crud_orden_impresion_juego.has_by_proceso(db, proceso_id=proceso.id):
+        raise HTTPException(
+            status_code=400,
+            detail="Este proceso de impresion se controla por juegos de placas.",
         )
 
 
@@ -246,6 +299,8 @@ def update_orden_produccion(
         )
 
     check_orden_produccion_editable(orden_db)
+    if "tipo_impresion" in update_data:
+        check_tipo_impresion_editable(orden_db, update_data.get("tipo_impresion"))
 
     if estado == "ANULADA":
         for proceso in orden_db.procesos or []:
@@ -273,6 +328,7 @@ def iniciar_proceso_produccion(
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
     check_permiso_proceso(current_user, proceso)
+    check_proceso_sin_juegos_impresion(db, proceso)
     if proceso.estado != "PENDIENTE":
         raise HTTPException(status_code=400, detail=f"No se puede iniciar un proceso en estado {proceso.estado}.")
 
@@ -305,6 +361,7 @@ def pausar_proceso_produccion(
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
     check_permiso_proceso(current_user, proceso)
+    check_proceso_sin_juegos_impresion(db, proceso)
     if proceso.estado != "EN_PROCESO":
         raise HTTPException(status_code=400, detail="Solamente se puede pausar si esta EN_PROCESO.")
 
@@ -332,6 +389,7 @@ def reanudar_proceso_produccion(
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
     check_permiso_proceso(current_user, proceso)
+    check_proceso_sin_juegos_impresion(db, proceso)
     if proceso.estado != "PAUSADO":
         raise HTTPException(status_code=400, detail="Solamente se puede reanudar si esta PAUSADO.")
 
@@ -362,6 +420,7 @@ def finalizar_proceso_produccion(
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado en la orden de produccion.")
     check_permiso_proceso(current_user, proceso)
+    check_proceso_sin_juegos_impresion(db, proceso)
     if proceso.estado != "EN_PROCESO":
         raise HTTPException(status_code=400, detail="El proceso debe estar EN_PROCESO para finalizar.")
 
@@ -377,6 +436,81 @@ def finalizar_proceso_produccion(
     crud_orden_proceso.log_accion(db=db, proceso_id=proceso.id, operador_id=current_user.id, accion="FINALIZAR")
     sync_estado_orden_produccion(db, orden_db)
     return proceso
+
+
+@router.put("/juegos-impresion/{juego_id}/iniciar", response_model=OrdenProduccion)
+def iniciar_juego_impresion(
+    *,
+    juego_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProduccion:
+    juego = get_juego_impresion_or_404(db, juego_id)
+    orden_db = get_orden_produccion_or_404(db, juego.orden_produccion_id)
+    check_orden_produccion_activa(orden_db)
+    check_permiso_proceso(current_user, juego.proceso)
+    check_sin_incidencias_abiertas(db, juego.proceso_id)
+    verificar_secuencia_produccion(db, juego.orden_produccion_id, juego.proceso.tipo_proceso)
+    verificar_operador_sin_trabajo_activo(db, current_user.id, juego.proceso_id)
+    run_juego_action(lambda: crud_orden_impresion_juego.iniciar_juego(db, juego=juego, operador_id=current_user.id))
+    return return_orden_after_juego_action(db, orden_db)
+
+
+@router.put("/juegos-impresion/{juego_id}/pausar", response_model=OrdenProduccion)
+def pausar_juego_impresion(
+    *,
+    juego_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProduccion:
+    juego = get_juego_impresion_or_404(db, juego_id)
+    orden_db = get_orden_produccion_or_404(db, juego.orden_produccion_id)
+    check_orden_produccion_activa(orden_db)
+    check_permiso_proceso(current_user, juego.proceso)
+    check_sin_incidencias_abiertas(db, juego.proceso_id)
+    run_juego_action(lambda: crud_orden_impresion_juego.pausar_juego(db, juego=juego, operador_id=current_user.id))
+    return return_orden_after_juego_action(db, orden_db)
+
+
+@router.put("/juegos-impresion/{juego_id}/reanudar", response_model=OrdenProduccion)
+def reanudar_juego_impresion(
+    *,
+    juego_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProduccion:
+    juego = get_juego_impresion_or_404(db, juego_id)
+    orden_db = get_orden_produccion_or_404(db, juego.orden_produccion_id)
+    check_orden_produccion_activa(orden_db)
+    check_permiso_proceso(current_user, juego.proceso)
+    check_sin_incidencias_abiertas(db, juego.proceso_id)
+    run_juego_action(lambda: crud_orden_impresion_juego.reanudar_juego(db, juego=juego, operador_id=current_user.id))
+    return return_orden_after_juego_action(db, orden_db)
+
+
+@router.put("/juegos-impresion/{juego_id}/finalizar", response_model=OrdenProduccion)
+def finalizar_juego_impresion(
+    *,
+    juego_id: int,
+    cierre: OrdenImpresionJuegoFinalizar,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> OrdenProduccion:
+    juego = get_juego_impresion_or_404(db, juego_id)
+    orden_db = get_orden_produccion_or_404(db, juego.orden_produccion_id)
+    check_orden_produccion_activa(orden_db)
+    check_permiso_proceso(current_user, juego.proceso)
+    check_sin_incidencias_abiertas(db, juego.proceso_id)
+    run_juego_action(
+        lambda: crud_orden_impresion_juego.finalizar_juego(
+            db,
+            juego=juego,
+            operador_id=current_user.id,
+            cantidad_buena=cierre.cantidad_buena,
+            cantidad_mala=cierre.cantidad_mala,
+        )
+    )
+    return return_orden_after_juego_action(db, orden_db)
 
 
 @router.put("/{id}/procesos/{tipo}/reabrir", response_model=OrdenProceso)
