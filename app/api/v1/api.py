@@ -10,6 +10,7 @@ from app.api.v1.routers import (
     orden_produccion,
     orden_trabajo,
     prediccion,
+    user,
 )
 
 api_router = APIRouter()
@@ -23,3 +24,4 @@ api_router.include_router(orden_trabajo.router, prefix="/ordenes-trabajo", tags=
 api_router.include_router(orden_produccion.router, prefix="/ordenes-produccion", tags=["ordenes-produccion"])
 api_router.include_router(incidencia.router, tags=["incidencias"])
 api_router.include_router(prediccion.router, prefix="/ia", tags=["ia"])
+api_router.include_router(user.router, prefix="/users", tags=["users"])
