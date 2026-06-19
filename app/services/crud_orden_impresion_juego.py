@@ -227,8 +227,8 @@ class CRUDOrdenImpresionJuego:
         if total > cantidad_planificada:
             raise ValueError(f"La suma no puede superar la cantidad planificada ({cantidad_planificada}).")
 
-        demasia_consumida = max(0, total - int(orden.cantidad or 0))
         demasia_total = int(orden.demasia or 0)
+        demasia_consumida = min(cantidad_mala, demasia_total)
 
         juego.estado = "TERMINADO"
         juego.fecha_fin = datetime.utcnow()
