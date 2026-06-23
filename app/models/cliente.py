@@ -13,6 +13,7 @@ class Cliente(Base):
     telefono = Column(String, nullable=True)
     correo = Column(String, nullable=True)
     direccion = Column(String, nullable=True)
+    tipo_cliente = Column(String, default="DIRECTO", nullable=False)
     requiere_orden_compra = Column(Boolean, default=False, nullable=False)
     estado = Column(String, default="ACTIVO", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

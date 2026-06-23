@@ -104,7 +104,9 @@ def check_orden_produccion_activa(orden_db) -> None:
 
 
 def orden_produccion_tiene_procesos_iniciados(orden_db) -> bool:
-    return any(proceso.estado != "PENDIENTE" for proceso in (orden_db.procesos or []))
+    procesos_iniciados = any(proceso.estado != "PENDIENTE" for proceso in (orden_db.procesos or []))
+    juegos_iniciados = any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or []))
+    return procesos_iniciados or juegos_iniciados
 
 
 def check_orden_produccion_editable(orden_db) -> None:
@@ -122,11 +124,65 @@ def check_tipo_impresion_editable(orden_db, nuevo_tipo: str | None) -> None:
         return
 
     afecta_juegos = tipo_actual in TIPOS_IMPRESION_CON_JUEGOS or tipo_nuevo in TIPOS_IMPRESION_CON_JUEGOS
-    if afecta_juegos and (orden_db.juegos_impresion or []):
+    if afecta_juegos and any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or [])):
         raise HTTPException(
             status_code=400,
-            detail="No se puede cambiar el tipo de impresion de una OP que ya tiene juegos de placas configurados.",
+            detail="No se puede cambiar el tipo de impresion de una OP que ya tiene juegos de placas iniciados.",
         )
+
+
+def get_cantidad_juegos_configurada(orden_db) -> int | None:
+    juegos = list(orden_db.juegos_impresion or [])
+    if not juegos:
+        return None
+
+    tipo_impresion = (orden_db.tipo_impresion or "").strip().upper()
+    if tipo_impresion in {"T/R", "T+R"}:
+        grupos = {juego.grupo_par for juego in juegos if juego.grupo_par is not None}
+        return len(grupos) or None
+
+    if tipo_impresion == "TIRA":
+        return len(juegos) or None
+
+    return None
+
+
+def regenerar_juegos_impresion_pendientes(
+    db: Session,
+    orden_db,
+    cantidad_juegos_placas: int | None,
+) -> None:
+    proceso_impresion = crud_orden_proceso.get_by_orden_produccion_and_tipo(
+        db,
+        orden_produccion_id=orden_db.id,
+        tipo_proceso="IMPRESION",
+    )
+    if not proceso_impresion:
+        return
+
+    juegos_actuales = crud_orden_impresion_juego.get_all_by_orden_produccion(
+        db,
+        orden_produccion_id=orden_db.id,
+    )
+    for juego in juegos_actuales:
+        if juego.estado != "PENDIENTE":
+            raise HTTPException(
+                status_code=400,
+                detail="No se pueden regenerar juegos de placas que ya fueron iniciados.",
+            )
+        db.delete(juego)
+    db.flush()
+
+    tipo_impresion = (orden_db.tipo_impresion or "").strip().upper()
+    if tipo_impresion in TIPOS_IMPRESION_CON_JUEGOS:
+        crud_orden_impresion_juego.create_for_impresion_process(
+            db,
+            orden_produccion=orden_db,
+            proceso=proceso_impresion,
+            cantidad_juegos_placas=cantidad_juegos_placas or 1,
+        )
+    db.commit()
+    db.refresh(orden_db)
 
 
 def get_orden_produccion_or_404(db: Session, id: int):
@@ -315,6 +371,24 @@ def update_orden_produccion(
     check_orden_produccion_editable(orden_db)
     if "tipo_impresion" in update_data:
         check_tipo_impresion_editable(orden_db, update_data.get("tipo_impresion"))
+    tipo_impresion_actual = (orden_db.tipo_impresion or "").strip().upper()
+    tipo_impresion_nuevo = (
+        update_data.get("tipo_impresion", orden_db.tipo_impresion) or ""
+    ).strip().upper()
+    cantidad_juegos_actual = get_cantidad_juegos_configurada(orden_db)
+    cantidad_juegos_placas = update_data.get(
+        "cantidad_juegos_placas", cantidad_juegos_actual
+    )
+    if cantidad_juegos_placas is None and tipo_impresion_nuevo in TIPOS_IMPRESION_CON_JUEGOS:
+        cantidad_juegos_placas = 1
+
+    debe_regenerar_juegos = (
+        tipo_impresion_actual != tipo_impresion_nuevo
+        or (
+            tipo_impresion_nuevo in TIPOS_IMPRESION_CON_JUEGOS
+            and cantidad_juegos_actual != cantidad_juegos_placas
+        )
+    )
 
     if estado == "ANULADA":
         for proceso in orden_db.procesos or []:
@@ -324,7 +398,12 @@ def update_orden_produccion(
     check_active_record(db, Material, orden_in.material_id, "Material")
     check_active_record(db, Formato, orden_in.formato_id, "Formato")
     check_active_record(db, Maquina, orden_in.maquina_id, "Maquina")
-    return crud_orden_produccion.update(db=db, db_obj=orden_db, obj_in=orden_in)
+    update_payload = dict(update_data)
+    update_payload.pop("cantidad_juegos_placas", None)
+    updated = crud_orden_produccion.update(db=db, db_obj=orden_db, obj_in=update_payload)
+    if debe_regenerar_juegos:
+        regenerar_juegos_impresion_pendientes(db, updated, cantidad_juegos_placas)
+    return updated
 
 
 @router.put("/{id}/procesos/{tipo}/iniciar", response_model=OrdenProceso)

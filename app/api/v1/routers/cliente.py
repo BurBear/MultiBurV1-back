@@ -19,9 +19,12 @@ CLIENTE_CSV_FIELDS = [
     "telefono",
     "correo",
     "direccion",
+    "tipo_cliente",
     "requiere_orden_compra",
     "estado",
 ]
+
+TIPOS_CLIENTE_VALIDOS = {"DIRECTO", "SERVICIO"}
 
 
 def parse_bool(value: str | bool | None) -> bool:
@@ -34,6 +37,11 @@ def parse_bool(value: str | bool | None) -> bool:
 def clean_text(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def parse_tipo_cliente(value: str | None) -> str:
+    normalized = str(value or "DIRECTO").strip().upper()
+    return normalized if normalized in TIPOS_CLIENTE_VALIDOS else "DIRECTO"
 
 
 @router.get("/", response_model=List[Cliente])
@@ -71,6 +79,7 @@ def export_clientes_csv(
             "telefono": cliente_db.telefono or "",
             "correo": cliente_db.correo or "",
             "direccion": cliente_db.direccion or "",
+            "tipo_cliente": cliente_db.tipo_cliente or "DIRECTO",
             "requiere_orden_compra": "SI" if cliente_db.requiere_orden_compra else "NO",
             "estado": cliente_db.estado,
         })
@@ -134,6 +143,7 @@ def import_clientes_csv(
             "telefono": value_for("telefono"),
             "correo": value_for("correo"),
             "direccion": value_for("direccion"),
+            "tipo_cliente": parse_tipo_cliente(value_for("tipo_cliente")),
             "requiere_orden_compra": parse_bool(value_for("requiere_orden_compra")),
             "estado": (value_for("estado") or "ACTIVO").upper(),
         }

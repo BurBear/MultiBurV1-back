@@ -2,6 +2,23 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
+def ensure_cliente_tipo_cliente_field(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if "clientes" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("clientes")}
+    with engine.begin() as connection:
+        if "tipo_cliente" not in columns:
+            connection.execute(
+                text("ALTER TABLE clientes ADD COLUMN tipo_cliente VARCHAR NOT NULL DEFAULT 'DIRECTO'")
+            )
+        else:
+            connection.execute(
+                text("UPDATE clientes SET tipo_cliente = 'DIRECTO' WHERE tipo_cliente IS NULL OR tipo_cliente = ''")
+            )
+
+
 def ensure_sqlite_orden_proceso_compat(engine: Engine) -> None:
     if engine.dialect.name != "sqlite":
         return

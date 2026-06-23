@@ -3,6 +3,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.db.schema_compat import (
+    ensure_cliente_tipo_cliente_field,
     ensure_sqlite_cliente_commercial_fields,
     ensure_sqlite_incidencias_produccion_compat,
     ensure_sqlite_orden_proceso_compat,
@@ -15,6 +16,7 @@ import app.models  # Asegurar que los modelos estén cargados
 
 # Creación automática de tablas (útil para SQLite local)
 Base.metadata.create_all(bind=engine)
+ensure_cliente_tipo_cliente_field(engine)
 ensure_sqlite_cliente_commercial_fields(engine)
 ensure_sqlite_orden_proceso_compat(engine)
 ensure_sqlite_orden_produccion_technical_fields(engine)

@@ -111,6 +111,21 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
         ]
         return ruta or None
 
+    def _cantidad_juegos_configurada_from_orden(self, orden: OrdenProduccion) -> int | None:
+        juegos = list(orden.juegos_impresion or [])
+        if not juegos:
+            return None
+
+        tipo_impresion = (orden.tipo_impresion or "").strip().upper()
+        if tipo_impresion in {"T/R", "T+R"}:
+            grupos = {juego.grupo_par for juego in juegos if juego.grupo_par is not None}
+            return len(grupos) or None
+
+        if tipo_impresion == "TIRA":
+            return len(juegos) or None
+
+        return None
+
     def create(self, db: Session, *, obj_in: OrdenProduccionCreate, user_id: int) -> OrdenProduccion:
         return self._create_with_processes(
             db=db,
@@ -184,7 +199,7 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             demasia=orden.demasia,
             modo_color=orden.modo_color,
             tipo_impresion=orden.tipo_impresion,
-            cantidad_juegos_placas=orden.cantidad_juegos_placas or None,
+            cantidad_juegos_placas=self._cantidad_juegos_configurada_from_orden(orden),
             material_id=orden.material_id,
             formato_id=orden.formato_id,
             maquina_id=orden.maquina_id,
