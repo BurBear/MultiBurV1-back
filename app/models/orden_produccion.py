@@ -47,4 +47,6 @@ class OrdenProduccion(Base):
 
     @property
     def cantidad_juegos_placas(self) -> int:
+        if (self.tipo_impresion or "").strip().upper() != "T+R":
+            return 0
         return len(self.juegos_impresion or [])

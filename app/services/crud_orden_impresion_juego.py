@@ -66,7 +66,7 @@ class CRUDOrdenImpresionJuego:
         cantidad_juegos_placas: int | None,
     ) -> list[OrdenImpresionJuego]:
         tipo_impresion = (orden_produccion.tipo_impresion or "").strip().upper()
-        if tipo_impresion not in {"TIRA", "T/R", "T+R"}:
+        if tipo_impresion != "T+R":
             return []
 
         cantidad_configurada = cantidad_juegos_placas or 1
@@ -76,38 +76,25 @@ class CRUDOrdenImpresionJuego:
             raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
 
         juegos: list[OrdenImpresionJuego] = []
-        if tipo_impresion in {"T/R", "T+R"}:
-            for grupo in range(1, cantidad_configurada + 1):
-                juegos.extend([
-                    OrdenImpresionJuego(
-                        orden_produccion_id=orden_produccion.id,
-                        proceso_id=proceso.id,
-                        grupo_par=grupo,
-                        lado="TIRA",
-                        codigo_lado=f"TIRA {grupo}A",
-                        estado="PENDIENTE",
-                    ),
-                    OrdenImpresionJuego(
-                        orden_produccion_id=orden_produccion.id,
-                        proceso_id=proceso.id,
-                        grupo_par=grupo,
-                        lado="RETIRA",
-                        codigo_lado=f"RETIRA {grupo}B",
-                        estado="PENDIENTE",
-                    ),
-                ])
-        else:
-            for grupo in range(1, cantidad_configurada + 1):
-                juegos.append(
-                    OrdenImpresionJuego(
-                        orden_produccion_id=orden_produccion.id,
-                        proceso_id=proceso.id,
-                        grupo_par=grupo,
-                        lado="TIRA",
-                        codigo_lado=f"TIRA {grupo}A",
-                        estado="PENDIENTE",
-                    )
-                )
+        for grupo in range(1, cantidad_configurada + 1):
+            juegos.extend([
+                OrdenImpresionJuego(
+                    orden_produccion_id=orden_produccion.id,
+                    proceso_id=proceso.id,
+                    grupo_par=grupo,
+                    lado="TIRA",
+                    codigo_lado=f"TIRA {grupo}A",
+                    estado="PENDIENTE",
+                ),
+                OrdenImpresionJuego(
+                    orden_produccion_id=orden_produccion.id,
+                    proceso_id=proceso.id,
+                    grupo_par=grupo,
+                    lado="RETIRA",
+                    codigo_lado=f"RETIRA {grupo}B",
+                    estado="PENDIENTE",
+                ),
+            ])
 
         for juego in juegos:
             db.add(juego)

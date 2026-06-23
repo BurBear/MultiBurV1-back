@@ -28,7 +28,7 @@ PROCESO_ROLES = {
     "IMPRESION": ["OPERADOR_IMPRESION"],
     "ACABADOS": ["OPERADOR_ACABADOS"],
 }
-TIPOS_IMPRESION_CON_JUEGOS = {"TIRA", "T/R", "T+R"}
+TIPOS_IMPRESION_CON_JUEGOS = {"T+R"}
 
 
 def check_active_record(db: Session, model, id: int | None, label: str):
@@ -105,7 +105,11 @@ def check_orden_produccion_activa(orden_db) -> None:
 
 def orden_produccion_tiene_procesos_iniciados(orden_db) -> bool:
     procesos_iniciados = any(proceso.estado != "PENDIENTE" for proceso in (orden_db.procesos or []))
-    juegos_iniciados = any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or []))
+    tipo_impresion = (orden_db.tipo_impresion or "").strip().upper()
+    juegos_iniciados = (
+        tipo_impresion in TIPOS_IMPRESION_CON_JUEGOS
+        and any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or []))
+    )
     return procesos_iniciados or juegos_iniciados
 
 
@@ -137,12 +141,9 @@ def get_cantidad_juegos_configurada(orden_db) -> int | None:
         return None
 
     tipo_impresion = (orden_db.tipo_impresion or "").strip().upper()
-    if tipo_impresion in {"T/R", "T+R"}:
+    if tipo_impresion == "T+R":
         grupos = {juego.grupo_par for juego in juegos if juego.grupo_par is not None}
         return len(grupos) or None
-
-    if tipo_impresion == "TIRA":
-        return len(juegos) or None
 
     return None
 
@@ -238,7 +239,13 @@ def check_sin_incidencias_abiertas(db: Session, proceso_id: int) -> None:
 
 
 def check_proceso_sin_juegos_impresion(db: Session, proceso) -> None:
-    if get_area_proceso(proceso) == "IMPRESION" and crud_orden_impresion_juego.has_by_proceso(db, proceso_id=proceso.id):
+    orden_produccion = getattr(proceso, "orden_produccion", None)
+    tipo_impresion = (getattr(orden_produccion, "tipo_impresion", "") or "").strip().upper()
+    if (
+        get_area_proceso(proceso) == "IMPRESION"
+        and tipo_impresion in TIPOS_IMPRESION_CON_JUEGOS
+        and crud_orden_impresion_juego.has_by_proceso(db, proceso_id=proceso.id)
+    ):
         raise HTTPException(
             status_code=400,
             detail="Este proceso de impresion se controla por juegos de placas.",

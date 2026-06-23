@@ -84,7 +84,10 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
     def _procesos_iniciados(self, orden: OrdenProduccion) -> bool:
         if any(proceso.estado != "PENDIENTE" for proceso in (orden.procesos or [])):
             return True
-        return any(juego.estado != "PENDIENTE" for juego in (orden.juegos_impresion or []))
+        tipo_impresion = (orden.tipo_impresion or "").strip().upper()
+        return tipo_impresion == "T+R" and any(
+            juego.estado != "PENDIENTE" for juego in (orden.juegos_impresion or [])
+        )
 
     def _procesos_personalizados_from_orden(self, orden: OrdenProduccion) -> list[str] | None:
         if orden.tipo_servicio != "PERSONALIZADO":
@@ -117,12 +120,9 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
             return None
 
         tipo_impresion = (orden.tipo_impresion or "").strip().upper()
-        if tipo_impresion in {"T/R", "T+R"}:
+        if tipo_impresion == "T+R":
             grupos = {juego.grupo_par for juego in juegos if juego.grupo_par is not None}
             return len(grupos) or None
-
-        if tipo_impresion == "TIRA":
-            return len(juegos) or None
 
         return None
 
