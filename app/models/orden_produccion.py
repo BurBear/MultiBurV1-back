@@ -17,6 +17,8 @@ class OrdenProduccion(Base):
     demasia = Column(Integer, nullable=True)
     modo_color = Column(String, nullable=True)
     tipo_impresion = Column(String, nullable=True)
+    observaciones = Column(String, nullable=True)
+    observacion_acabados = Column(String, nullable=True)
     material_id = Column(Integer, ForeignKey("materiales.id"), nullable=True)
     formato_id = Column(Integer, ForeignKey("formatos.id"), nullable=True)
     maquina_id = Column(Integer, ForeignKey("maquinas.id"), nullable=True)

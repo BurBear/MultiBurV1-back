@@ -19,6 +19,25 @@ def ensure_cliente_tipo_cliente_field(engine: Engine) -> None:
             )
 
 
+def ensure_orden_produccion_observacion_fields(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if "ordenes_produccion" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("ordenes_produccion")}
+    fields = {
+        "observaciones": "VARCHAR",
+        "observacion_acabados": "VARCHAR",
+    }
+
+    with engine.begin() as connection:
+        for field_name, field_type in fields.items():
+            if field_name not in columns:
+                connection.execute(
+                    text(f"ALTER TABLE ordenes_produccion ADD COLUMN {field_name} {field_type}")
+                )
+
+
 def ensure_sqlite_orden_proceso_compat(engine: Engine) -> None:
     if engine.dialect.name != "sqlite":
         return

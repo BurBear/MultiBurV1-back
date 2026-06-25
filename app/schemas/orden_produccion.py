@@ -14,6 +14,8 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
     modo_color: str | None = None
     tipo_impresion: str | None = None
     cantidad_juegos_placas: int | None = None
+    observaciones: str | None = None
+    observacion_acabados: str | None = None
 
     @field_validator("demasia")
     @classmethod
@@ -44,6 +46,14 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
         if value is not None and value > 20:
             raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
         return value
+
+    @field_validator("observaciones", "observacion_acabados")
+    @classmethod
+    def normalize_observaciones(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text or None
 
 
 class OrdenProduccionBase(OrdenProduccionFichaTecnicaBase):
@@ -126,6 +136,8 @@ class OrdenProduccion(BaseModel):
     modo_color: str | None = None
     tipo_impresion: str | None = None
     cantidad_juegos_placas: int = 0
+    observaciones: str | None = None
+    observacion_acabados: str | None = None
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
