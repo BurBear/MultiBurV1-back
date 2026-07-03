@@ -2,15 +2,22 @@ from typing import List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 from app.api.deps import get_db, get_current_active_admin, get_current_active_user
 from app.models.cliente import Cliente
 from app.models.formato import Formato
 from app.models.maquina import Maquina
 from app.models.material import Material
+from app.models.orden_produccion import OrdenProduccion as OrdenProduccionModel
 from app.models.orden_proceso import resolve_process_area
 from app.models.orden_trabajo import OrdenTrabajo
 from app.models.user import User
-from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreate, OrdenProduccionUpdate
+from app.schemas.orden_produccion import (
+    OrdenProduccion,
+    OrdenProduccionCreate,
+    OrdenProduccionResumen,
+    OrdenProduccionUpdate,
+)
 from app.schemas.orden_impresion_juego import OrdenImpresionJuegoFinalizar
 from app.schemas.orden_proceso import OrdenProceso, OrdenProcesoFinalizar
 from app.services.crud_incidencia import incidencia as crud_incidencia
@@ -111,6 +118,43 @@ def orden_produccion_tiene_procesos_iniciados(orden_db) -> bool:
         and any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or []))
     )
     return procesos_iniciados or juegos_iniciados
+
+
+def build_orden_produccion_resumen(orden_db) -> OrdenProduccionResumen:
+    procesos_iniciados = any(proceso.estado != "PENDIENTE" for proceso in (orden_db.procesos or []))
+    tipo_impresion = (orden_db.tipo_impresion or "").strip().upper()
+    juegos_iniciados = (
+        tipo_impresion in TIPOS_IMPRESION_CON_JUEGOS
+        and any(juego.estado != "PENDIENTE" for juego in (orden_db.juegos_impresion or []))
+    )
+    puede_modificar = orden_db.estado == "PENDIENTE" and not procesos_iniciados and not juegos_iniciados
+    return OrdenProduccionResumen(
+        id=orden_db.id,
+        orden_trabajo_id=orden_db.orden_trabajo_id,
+        orden_trabajo_codigo=orden_db.orden_trabajo.codigo if orden_db.orden_trabajo else None,
+        cliente_id=orden_db.cliente_id,
+        codigo=orden_db.codigo,
+        descripcion=orden_db.descripcion,
+        cantidad=orden_db.cantidad,
+        fecha_entrega_estimada=orden_db.fecha_entrega_estimada,
+        demasia=orden_db.demasia,
+        modo_color=orden_db.modo_color,
+        tipo_impresion=orden_db.tipo_impresion,
+        cantidad_juegos_placas=orden_db.cantidad_juegos_placas,
+        observaciones=orden_db.observaciones,
+        observacion_acabados=orden_db.observacion_acabados,
+        material_id=orden_db.material_id,
+        formato_id=orden_db.formato_id,
+        maquina_id=orden_db.maquina_id,
+        tipo_origen=orden_db.tipo_origen,
+        tipo_servicio=orden_db.tipo_servicio,
+        estado=orden_db.estado,
+        user_id=orden_db.user_id,
+        created_at=orden_db.created_at,
+        procesos_iniciados=procesos_iniciados,
+        juegos_iniciados=juegos_iniciados,
+        puede_modificar=puede_modificar,
+    )
 
 
 def check_orden_produccion_editable(orden_db) -> None:
@@ -312,6 +356,23 @@ def read_ordenes_produccion(
     current_user: User = Depends(get_current_active_user),
 ) -> List[OrdenProduccion]:
     return crud_orden_produccion.get_all(db)
+
+
+@router.get("/resumen", response_model=List[OrdenProduccionResumen])
+def read_ordenes_produccion_resumen(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> List[OrdenProduccionResumen]:
+    ordenes = (
+        db.query(OrdenProduccionModel)
+        .options(
+            selectinload(OrdenProduccionModel.orden_trabajo),
+            selectinload(OrdenProduccionModel.procesos),
+            selectinload(OrdenProduccionModel.juegos_impresion),
+        )
+        .all()
+    )
+    return [build_orden_produccion_resumen(orden) for orden in ordenes]
 
 
 @router.post("/", response_model=OrdenProduccion)

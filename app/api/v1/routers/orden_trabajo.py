@@ -2,15 +2,19 @@ from typing import List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 from app.api.deps import get_db, get_current_active_admin, get_current_active_user
 from app.models.cliente import Cliente as ClienteModel
+from app.models.orden_produccion import OrdenProduccion as OrdenProduccionModel
+from app.models.orden_trabajo import OrdenTrabajo as OrdenTrabajoModel
 from app.models.user import User
-from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreateFromTrabajo
+from app.schemas.orden_produccion import OrdenProduccion, OrdenProduccionCreateFromTrabajo, OrdenProduccionMini
 from app.schemas.orden_trabajo import (
     OrdenTrabajo,
     OrdenTrabajoCreate,
     OrdenTrabajoEntrega,
     OrdenTrabajoOrdenCompra,
+    OrdenTrabajoResumen,
     OrdenTrabajoUpdate,
 )
 from app.services.crud_orden_produccion import orden_produccion as crud_orden_produccion
@@ -46,7 +50,10 @@ def orden_trabajo_completa(orden_db) -> bool:
 def produccion_tiene_inicio(produccion) -> bool:
     if produccion.estado not in {"PENDIENTE", "ANULADA"}:
         return True
-    return any(proceso.estado != "PENDIENTE" for proceso in (produccion.procesos or []))
+    return (
+        any(proceso.estado != "PENDIENTE" for proceso in (produccion.procesos or []))
+        or any(juego.estado != "PENDIENTE" for juego in (produccion.juegos_impresion or []))
+    )
 
 
 def orden_trabajo_tiene_produccion_iniciada(orden_db) -> bool:
@@ -61,12 +68,71 @@ def check_orden_trabajo_editable(orden_db) -> None:
         )
 
 
+def build_orden_produccion_mini(produccion) -> OrdenProduccionMini:
+    procesos_iniciados = any(proceso.estado != "PENDIENTE" for proceso in (produccion.procesos or []))
+    juegos_iniciados = any(juego.estado != "PENDIENTE" for juego in (produccion.juegos_impresion or []))
+    return OrdenProduccionMini(
+        id=produccion.id,
+        codigo=produccion.codigo,
+        descripcion=produccion.descripcion,
+        estado=produccion.estado,
+        procesos_iniciados=procesos_iniciados,
+        juegos_iniciados=juegos_iniciados,
+    )
+
+
+def build_orden_trabajo_resumen(orden_db) -> OrdenTrabajoResumen:
+    return OrdenTrabajoResumen(
+        id=orden_db.id,
+        cliente_id=orden_db.cliente_id,
+        codigo=orden_db.codigo,
+        nombre=orden_db.nombre,
+        descripcion=orden_db.descripcion,
+        tiene_orden_compra=orden_db.tiene_orden_compra,
+        numero_orden_compra=orden_db.numero_orden_compra,
+        fecha_orden_compra=orden_db.fecha_orden_compra,
+        observacion_orden_compra=orden_db.observacion_orden_compra,
+        fecha_entrega_estimada=orden_db.fecha_entrega_estimada,
+        estado=orden_db.estado,
+        requiere_guia_entrega=orden_db.requiere_guia_entrega,
+        numero_guia_entrega=orden_db.numero_guia_entrega,
+        observacion_guia_entrega=orden_db.observacion_guia_entrega,
+        observacion_entrega=orden_db.observacion_entrega,
+        fecha_entrega_real=orden_db.fecha_entrega_real,
+        fecha_registro_orden_compra=orden_db.fecha_registro_orden_compra,
+        orden_compra_user_id=orden_db.orden_compra_user_id,
+        user_id=orden_db.user_id,
+        created_at=orden_db.created_at,
+        tiene_produccion_iniciada=orden_trabajo_tiene_produccion_iniciada(orden_db),
+        ordenes_produccion=[
+            build_orden_produccion_mini(produccion)
+            for produccion in (orden_db.ordenes_produccion or [])
+        ],
+    )
+
+
 @router.get("/", response_model=List[OrdenTrabajo])
 def read_ordenes_trabajo(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> List[OrdenTrabajo]:
     return crud_orden_trabajo.get_all(db)
+
+
+@router.get("/resumen", response_model=List[OrdenTrabajoResumen])
+def read_ordenes_trabajo_resumen(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> List[OrdenTrabajoResumen]:
+    ordenes = (
+        db.query(OrdenTrabajoModel)
+        .options(
+            selectinload(OrdenTrabajoModel.ordenes_produccion).selectinload(OrdenProduccionModel.procesos),
+            selectinload(OrdenTrabajoModel.ordenes_produccion).selectinload(OrdenProduccionModel.juegos_impresion),
+        )
+        .all()
+    )
+    return [build_orden_trabajo_resumen(orden) for orden in ordenes]
 
 
 @router.post("/", response_model=OrdenTrabajo)

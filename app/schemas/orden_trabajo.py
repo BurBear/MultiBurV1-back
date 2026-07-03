@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from pydantic import BaseModel
-from .orden_produccion import OrdenProduccion
+from .orden_produccion import OrdenProduccion, OrdenProduccionMini
 
 
 class OrdenTrabajoBase(BaseModel):
@@ -58,5 +58,24 @@ class OrdenTrabajo(OrdenTrabajoBase):
     user_id: int
     created_at: datetime
     ordenes_produccion: list[OrdenProduccion] = []
+
+    model_config = {"from_attributes": True}
+
+
+class OrdenTrabajoResumen(OrdenTrabajoBase):
+    id: int
+    codigo: str
+    estado: str
+    requiere_guia_entrega: bool = False
+    numero_guia_entrega: str | None = None
+    observacion_guia_entrega: str | None = None
+    observacion_entrega: str | None = None
+    fecha_entrega_real: datetime | None = None
+    fecha_registro_orden_compra: datetime | None = None
+    orden_compra_user_id: int | None = None
+    user_id: int
+    created_at: datetime
+    tiene_produccion_iniciada: bool = False
+    ordenes_produccion: list[OrdenProduccionMini] = []
 
     model_config = {"from_attributes": True}

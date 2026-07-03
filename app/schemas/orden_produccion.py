@@ -150,3 +150,44 @@ class OrdenProduccion(BaseModel):
     juegos_impresion: list[OrdenImpresionJuego] = []
 
     model_config = {"from_attributes": True}
+
+
+class OrdenProduccionResumen(BaseModel):
+    id: int
+    orden_trabajo_id: int | None = None
+    orden_trabajo_codigo: str | None = None
+    cliente_id: int
+    codigo: str
+    descripcion: str
+    cantidad: int
+    fecha_entrega_estimada: datetime | None = None
+    demasia: int | None = None
+    modo_color: str | None = None
+    tipo_impresion: str | None = None
+    cantidad_juegos_placas: int = 0
+    observaciones: str | None = None
+    observacion_acabados: str | None = None
+    material_id: int | None = None
+    formato_id: int | None = None
+    maquina_id: int | None = None
+    tipo_origen: str
+    tipo_servicio: str
+    estado: str
+    user_id: int
+    created_at: datetime
+    procesos_iniciados: bool = False
+    juegos_iniciados: bool = False
+    puede_modificar: bool = True
+
+    model_config = {"from_attributes": True}
+
+
+class OrdenProduccionMini(BaseModel):
+    id: int
+    codigo: str
+    descripcion: str | None = None
+    estado: str
+    procesos_iniciados: bool = False
+    juegos_iniciados: bool = False
+
+    model_config = {"from_attributes": True}
