@@ -178,6 +178,45 @@ class OrdenProduccionResumen(BaseModel):
     procesos_iniciados: bool = False
     juegos_iniciados: bool = False
     puede_modificar: bool = True
+    procesos: list["OrdenProcesoResumen"] = []
+    juegos_impresion: list["OrdenImpresionJuegoResumen"] = []
+
+    model_config = {"from_attributes": True}
+
+
+class OrdenProcesoResumen(BaseModel):
+    id: int
+    orden_id: int | None = None
+    orden_produccion_id: int | None = None
+    tipo_proceso: str
+    area: str | None = None
+    estado: str
+    operador_id: int | None = None
+    operador_nombre: str | None = None
+    fecha_inicio: datetime | None = None
+    fecha_fin: datetime | None = None
+    cantidad_buena: int | None = None
+    cantidad_mala: int | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class OrdenImpresionJuegoResumen(BaseModel):
+    id: int
+    orden_produccion_id: int
+    proceso_id: int
+    grupo_par: int
+    lado: str
+    codigo_lado: str
+    estado: str
+    operador_id: int | None = None
+    operador_nombre: str | None = None
+    fecha_inicio: datetime | None = None
+    fecha_fin: datetime | None = None
+    cantidad_buena: int | None = None
+    cantidad_mala: int | None = None
+    demasia_consumida: int | None = None
+    demasia_restante: int | None = None
 
     model_config = {"from_attributes": True}
 

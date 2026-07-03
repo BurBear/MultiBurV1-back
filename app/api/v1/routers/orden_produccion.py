@@ -6,10 +6,11 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_db, get_current_active_admin, get_current_active_user
 from app.models.cliente import Cliente
 from app.models.formato import Formato
+from app.models.orden_impresion_juego import OrdenImpresionJuego as OrdenImpresionJuegoModel
 from app.models.maquina import Maquina
 from app.models.material import Material
 from app.models.orden_produccion import OrdenProduccion as OrdenProduccionModel
-from app.models.orden_proceso import resolve_process_area
+from app.models.orden_proceso import OrdenProceso as OrdenProcesoModel, resolve_process_area
 from app.models.orden_trabajo import OrdenTrabajo
 from app.models.user import User
 from app.schemas.orden_produccion import (
@@ -154,6 +155,43 @@ def build_orden_produccion_resumen(orden_db) -> OrdenProduccionResumen:
         procesos_iniciados=procesos_iniciados,
         juegos_iniciados=juegos_iniciados,
         puede_modificar=puede_modificar,
+        procesos=[
+            {
+                "id": proceso.id,
+                "orden_id": proceso.orden_id,
+                "orden_produccion_id": proceso.orden_produccion_id,
+                "tipo_proceso": proceso.tipo_proceso,
+                "area": proceso.area,
+                "estado": proceso.estado,
+                "operador_id": proceso.operador_id,
+                "operador_nombre": proceso.operador_nombre,
+                "fecha_inicio": proceso.fecha_inicio,
+                "fecha_fin": proceso.fecha_fin,
+                "cantidad_buena": proceso.cantidad_buena,
+                "cantidad_mala": proceso.cantidad_mala,
+            }
+            for proceso in (orden_db.procesos or [])
+        ],
+        juegos_impresion=[
+            {
+                "id": juego.id,
+                "orden_produccion_id": juego.orden_produccion_id,
+                "proceso_id": juego.proceso_id,
+                "grupo_par": juego.grupo_par,
+                "lado": juego.lado,
+                "codigo_lado": juego.codigo_lado,
+                "estado": juego.estado,
+                "operador_id": juego.operador_id,
+                "operador_nombre": juego.operador_nombre,
+                "fecha_inicio": juego.fecha_inicio,
+                "fecha_fin": juego.fecha_fin,
+                "cantidad_buena": juego.cantidad_buena,
+                "cantidad_mala": juego.cantidad_mala,
+                "demasia_consumida": juego.demasia_consumida,
+                "demasia_restante": juego.demasia_restante,
+            }
+            for juego in (orden_db.juegos_impresion or [])
+        ],
     )
 
 
@@ -367,8 +405,8 @@ def read_ordenes_produccion_resumen(
         db.query(OrdenProduccionModel)
         .options(
             selectinload(OrdenProduccionModel.orden_trabajo),
-            selectinload(OrdenProduccionModel.procesos),
-            selectinload(OrdenProduccionModel.juegos_impresion),
+            selectinload(OrdenProduccionModel.procesos).selectinload(OrdenProcesoModel.operador),
+            selectinload(OrdenProduccionModel.juegos_impresion).selectinload(OrdenImpresionJuegoModel.operador),
         )
         .all()
     )
