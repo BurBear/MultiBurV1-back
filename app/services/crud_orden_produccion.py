@@ -126,6 +126,60 @@ class CRUDOrdenProduccion(CRUDBase[OrdenProduccion, OrdenProduccionCreate, Orden
 
         return None
 
+    def regenerar_procesos_pendientes(
+        self,
+        db: Session,
+        *,
+        orden: OrdenProduccion,
+        tipo_servicio: str,
+        procesos_personalizados: list[str] | None,
+        ruta_acabados: list[str] | None,
+        cantidad_juegos_placas: int | None,
+    ) -> OrdenProduccion:
+        if any(proceso.estado != "PENDIENTE" for proceso in (orden.procesos or [])):
+            raise ValueError("No se puede cambiar la ruta de una OP que ya inicio procesos.")
+        if any(juego.estado != "PENDIENTE" for juego in (orden.juegos_impresion or [])):
+            raise ValueError("No se puede cambiar la ruta de una OP que ya inicio juegos de placas.")
+
+        for juego in list(orden.juegos_impresion or []):
+            db.delete(juego)
+        for proceso in list(orden.procesos or []):
+            db.delete(proceso)
+        db.flush()
+
+        procesos_creados: list[OrdenProceso] = []
+        for proceso_nombre, proceso_area in self._procesos_por_tipo_servicio(
+            tipo_servicio=tipo_servicio,
+            procesos_personalizados=procesos_personalizados,
+            ruta_acabados=ruta_acabados,
+        ):
+            proceso = OrdenProceso(
+                orden_id=None,
+                orden_produccion_id=orden.id,
+                tipo_proceso=proceso_nombre,
+                area=proceso_area,
+                estado="PENDIENTE",
+            )
+            db.add(proceso)
+            procesos_creados.append(proceso)
+
+        db.flush()
+        proceso_impresion = next(
+            (proceso for proceso in procesos_creados if resolve_process_area(proceso.tipo_proceso) == "IMPRESION"),
+            None,
+        )
+        if proceso_impresion and (orden.tipo_impresion or "").strip().upper() == "T+R":
+            crud_orden_impresion_juego.create_for_impresion_process(
+                db,
+                orden_produccion=orden,
+                proceso=proceso_impresion,
+                cantidad_juegos_placas=cantidad_juegos_placas or 1,
+            )
+
+        db.commit()
+        db.refresh(orden)
+        return orden
+
     def create(self, db: Session, *, obj_in: OrdenProduccionCreate, user_id: int) -> OrdenProduccion:
         return self._create_with_processes(
             db=db,

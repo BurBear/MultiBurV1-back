@@ -495,6 +495,10 @@ def update_orden_produccion(
             and cantidad_juegos_actual != cantidad_juegos_placas
         )
     )
+    debe_regenerar_procesos = any(
+        field in update_data
+        for field in ("tipo_servicio", "procesos_personalizados", "ruta_acabados")
+    )
 
     if estado == "ANULADA":
         for proceso in orden_db.procesos or []:
@@ -506,8 +510,22 @@ def update_orden_produccion(
     check_active_record(db, Maquina, orden_in.maquina_id, "Maquina")
     update_payload = dict(update_data)
     update_payload.pop("cantidad_juegos_placas", None)
+    procesos_personalizados = update_payload.pop("procesos_personalizados", None)
+    ruta_acabados = update_payload.pop("ruta_acabados", None)
     updated = crud_orden_produccion.update(db=db, db_obj=orden_db, obj_in=update_payload)
-    if debe_regenerar_juegos:
+    if debe_regenerar_procesos:
+        try:
+            updated = crud_orden_produccion.regenerar_procesos_pendientes(
+                db,
+                orden=updated,
+                tipo_servicio=updated.tipo_servicio,
+                procesos_personalizados=procesos_personalizados,
+                ruta_acabados=ruta_acabados,
+                cantidad_juegos_placas=cantidad_juegos_placas,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    elif debe_regenerar_juegos:
         regenerar_juegos_impresion_pendientes(db, updated, cantidad_juegos_placas)
     return updated
 

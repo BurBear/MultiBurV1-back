@@ -121,7 +121,21 @@ class OrdenProduccionUpdate(OrdenProduccionFichaTecnicaBase):
     material_id: int | None = None
     formato_id: int | None = None
     maquina_id: int | None = None
+    tipo_servicio: Literal["COMPLETO", "SOLO_IMPRESION", "PERSONALIZADO"] | None = None
+    procesos_personalizados: list[str] | None = None
+    ruta_acabados: list[str] | None = None
     estado: str | None = None
+
+    @model_validator(mode="after")
+    def validate_procesos_update(self):
+        if self.tipo_servicio == "PERSONALIZADO":
+            if not self.procesos_personalizados:
+                raise ValueError("Se debe proveer procesos_personalizados si el servicio es PERSONALIZADO")
+            if len(self.procesos_personalizados) != len(set(self.procesos_personalizados)):
+                raise ValueError("La lista de procesos no puede contener elementos duplicados")
+        if self.ruta_acabados and len(self.ruta_acabados) != len(set(self.ruta_acabados)):
+            raise ValueError("La ruta de acabados no puede contener elementos duplicados")
+        return self
 
 
 class OrdenProduccion(BaseModel):
