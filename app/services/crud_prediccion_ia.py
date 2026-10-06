@@ -1,12 +1,13 @@
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.orden_proceso import OrdenProceso
 from app.models.orden_produccion import OrdenProduccion
 from app.models.prediccion_ia import PrediccionIA
 from app.models.user import User
 from app.services.prediccion_tiempos import prediccion_tiempos
+from app.services.tiempo_efectivo import duracion_efectiva_minutos
 
 
 ESTADOS_RIESGO_PERMITIDOS = {
@@ -169,7 +170,10 @@ class CRUDPrediccionIA:
     def _get_orden(self, db: Session, orden_produccion_id: int) -> OrdenProduccion:
         orden = (
             db.query(OrdenProduccion)
-            .options(joinedload(OrdenProduccion.procesos))
+            .options(
+                selectinload(OrdenProduccion.procesos).selectinload(OrdenProceso.historial),
+                selectinload(OrdenProduccion.procesos).selectinload(OrdenProceso.juegos_impresion),
+            )
             .filter(OrdenProduccion.id == orden_produccion_id)
             .first()
         )
@@ -181,12 +185,7 @@ class CRUDPrediccionIA:
         return db.query(PrediccionIA)
 
     def _duracion_proceso_minutos(self, proceso: OrdenProceso) -> int | None:
-        if not proceso.fecha_inicio or not proceso.fecha_fin:
-            return None
-        seconds = (proceso.fecha_fin - proceso.fecha_inicio).total_seconds()
-        if seconds <= 0:
-            return None
-        return max(1, round(seconds / 60))
+        return duracion_efectiva_minutos(proceso)
 
     def _dump_schema(self, item) -> dict:
         if hasattr(item, "model_dump"):

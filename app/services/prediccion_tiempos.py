@@ -2,10 +2,11 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from statistics import mean
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.orden_proceso import OrdenProceso
 from app.models.orden_produccion import OrdenProduccion
+from app.services.tiempo_efectivo import duracion_efectiva_minutos
 from app.schemas.prediccion import (
     MaterialFrecuente,
     PrediccionOrdenProduccionExistenteResponse,
@@ -282,6 +283,8 @@ class PrediccionTiemposService:
             .join(OrdenProduccion, OrdenProceso.orden_produccion_id == OrdenProduccion.id)
             .options(
                 joinedload(OrdenProceso.orden_produccion).joinedload(OrdenProduccion.material),
+                selectinload(OrdenProceso.historial),
+                selectinload(OrdenProceso.juegos_impresion),
             )
             .filter(
                 OrdenProceso.estado == "TERMINADO",
@@ -292,12 +295,7 @@ class PrediccionTiemposService:
         )
 
     def _duracion_proceso_minutos(self, proceso: OrdenProceso) -> int | None:
-        if not proceso.fecha_inicio or not proceso.fecha_fin:
-            return None
-        seconds = (proceso.fecha_fin - proceso.fecha_inicio).total_seconds()
-        if seconds <= 0:
-            return None
-        return max(1, round(seconds / 60))
+        return duracion_efectiva_minutos(proceso)
 
     def _duracion_real_orden(self, orden: OrdenProduccion) -> int | None:
         durations = [
