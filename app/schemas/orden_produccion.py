@@ -43,8 +43,8 @@ class OrdenProduccionFichaTecnicaBase(BaseModel):
     def validate_cantidad_juegos_placas(cls, value: int | None) -> int | None:
         if value is not None and value <= 0:
             raise ValueError("cantidad_juegos_placas debe ser mayor que cero")
-        if value is not None and value > 20:
-            raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
+        if value is not None and value > 40:
+            raise ValueError("cantidad_juegos_placas no puede ser mayor que 40")
         return value
 
     @field_validator("observaciones", "observacion_acabados")

@@ -72,8 +72,8 @@ class CRUDOrdenImpresionJuego:
         cantidad_configurada = cantidad_juegos_placas or 1
         if cantidad_configurada <= 0:
             return []
-        if cantidad_configurada > 20:
-            raise ValueError("cantidad_juegos_placas no puede ser mayor que 20")
+        if cantidad_configurada > 40:
+            raise ValueError("cantidad_juegos_placas no puede ser mayor que 40")
 
         juegos: list[OrdenImpresionJuego] = []
         for grupo in range(1, cantidad_configurada + 1):
