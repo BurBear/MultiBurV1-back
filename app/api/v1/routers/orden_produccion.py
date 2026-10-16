@@ -88,22 +88,12 @@ def verificar_propietario(proceso, current_user_id: int) -> None:
 
 
 def verificar_operador_sin_trabajo_activo(db: Session, current_user_id: int, proceso_id: int | None = None) -> None:
-    proceso_activo = crud_orden_proceso.get_active_by_operador(
-        db,
-        operador_id=current_user_id,
-        exclude_proceso_id=proceso_id,
-    )
-    if proceso_activo:
-        raise HTTPException(
-            status_code=409,
-            detail="Ya tienes una orden de produccion en proceso o pausada. Finalizala antes de iniciar otra.",
+    try:
+        crud_orden_proceso.verificar_disponibilidad_operador(
+            db, operador_id=current_user_id, exclude_proceso_id=proceso_id,
         )
-    juego_activo = crud_orden_impresion_juego.get_active_by_operador(db, operador_id=current_user_id)
-    if juego_activo:
-        raise HTTPException(
-            status_code=409,
-            detail="Ya tienes un juego de impresion en proceso o pausado. Finalizalo antes de iniciar otro.",
-        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def check_orden_produccion_activa(orden_db) -> None:

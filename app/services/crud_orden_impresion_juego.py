@@ -8,7 +8,7 @@ from app.models.orden_produccion import OrdenProduccion
 from app.services.crud_orden_proceso import orden_proceso as crud_orden_proceso
 
 
-ESTADOS_ACTIVOS_JUEGO = {"EN_PROCESO", "PAUSADO"}
+ESTADOS_ACTIVOS_JUEGO = {"EN_PROCESO"}
 
 
 class CRUDOrdenImpresionJuego:
@@ -126,9 +126,10 @@ class CRUDOrdenImpresionJuego:
         return proceso
 
     def iniciar_juego(self, db: Session, *, juego: OrdenImpresionJuego, operador_id: int) -> OrdenImpresionJuego:
-        active = self.get_active_by_operador(db, operador_id=operador_id, exclude_juego_id=juego.id)
-        if active:
-            raise ValueError("Ya tienes un juego de impresion en proceso o pausado.")
+        crud_orden_proceso.verificar_disponibilidad_operador(
+            db, operador_id=operador_id, exclude_proceso_id=juego.proceso_id, exclude_juego_id=juego.id,
+        )
+        db.refresh(juego)
 
         if juego.estado == "BLOQUEADO" and juego.operador_id != operador_id:
             raise PermissionError("Este juego esta bloqueado por su par y pertenece a otro operador.")
@@ -173,13 +174,14 @@ class CRUDOrdenImpresionJuego:
         return juego
 
     def reanudar_juego(self, db: Session, *, juego: OrdenImpresionJuego, operador_id: int) -> OrdenImpresionJuego:
+        crud_orden_proceso.verificar_disponibilidad_operador(
+            db, operador_id=operador_id, exclude_proceso_id=juego.proceso_id, exclude_juego_id=juego.id,
+        )
+        db.refresh(juego)
         if juego.operador_id != operador_id:
             raise PermissionError("Este juego es controlado por otro operador.")
         if juego.estado != "PAUSADO":
             raise ValueError("Solamente se puede reanudar un juego PAUSADO.")
-        active = self.get_active_by_operador(db, operador_id=operador_id, exclude_juego_id=juego.id)
-        if active:
-            raise ValueError("Ya tienes un juego de impresion en proceso o pausado.")
         juego.estado = "EN_PROCESO"
         proceso = juego.proceso
         self._sync_parent_process(db, proceso=proceso)

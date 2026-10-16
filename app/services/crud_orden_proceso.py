@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.services.base import CRUDBase
 from app.models.orden_proceso import OrdenProceso
 from app.models.orden_proceso_historial import OrdenProcesoHistorial
+from app.models.orden_impresion_juego import OrdenImpresionJuego
+from app.models.user import User
 from app.schemas.orden_proceso import OrdenProcesoCreate, OrdenProcesoUpdate
 from datetime import datetime
 
@@ -37,16 +39,38 @@ class CRUDOrdenProceso(CRUDBase[OrdenProceso, OrdenProcesoCreate, OrdenProcesoUp
     ) -> OrdenProceso | None:
         query = db.query(OrdenProceso).filter(
             OrdenProceso.operador_id == operador_id,
-            OrdenProceso.estado.in_(["EN_PROCESO", "PAUSADO"]),
+            OrdenProceso.estado == "EN_PROCESO",
         )
         if exclude_proceso_id is not None:
             query = query.filter(OrdenProceso.id != exclude_proceso_id)
         return query.order_by(OrdenProceso.fecha_inicio.desc(), OrdenProceso.id.desc()).first()
 
+    def verificar_disponibilidad_operador(
+        self, db: Session, *, operador_id: int,
+        exclude_proceso_id: int | None = None,
+        exclude_juego_id: int | None = None,
+    ) -> None:
+        # Serialize starts/resumes for this operator in PostgreSQL until commit.
+        db.query(User.id).filter(User.id == operador_id).with_for_update().one()
+        proceso = self.get_active_by_operador(
+            db, operador_id=operador_id, exclude_proceso_id=exclude_proceso_id,
+        )
+        juegos = db.query(OrdenImpresionJuego.id).filter(
+            OrdenImpresionJuego.operador_id == operador_id,
+            OrdenImpresionJuego.estado == "EN_PROCESO",
+        )
+        if exclude_juego_id is not None:
+            juegos = juegos.filter(OrdenImpresionJuego.id != exclude_juego_id)
+        if proceso or juegos.first() is not None:
+            raise ValueError(
+                "Ya tienes un trabajo en ejecucion. Pausalo o finalizalo antes de iniciar o reanudar otro."
+            )
+
     def iniciar_proceso_atomico(self, db: Session, proceso_id: int, operador_id: int) -> bool:
+        self.verificar_disponibilidad_operador(db, operador_id=operador_id, exclude_proceso_id=proceso_id)
         active_process_exists = select(OrdenProceso.id).where(
             OrdenProceso.operador_id == operador_id,
-            OrdenProceso.estado.in_(["EN_PROCESO", "PAUSADO"]),
+            OrdenProceso.estado == "EN_PROCESO",
             OrdenProceso.id != proceso_id,
         ).exists()
         stmt = update(OrdenProceso).where(
